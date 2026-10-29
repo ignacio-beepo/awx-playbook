@@ -1,0 +1,22 @@
+---
+- name: Test Ubuntu connectivity
+  hosts: ubuntu_servers
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: Show target details
+      ansible.builtin.debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "OS: {{ ansible_distribution }}"
+          - "Version: {{ ansible_distribution_version }}"
+          - "IP: {{ ansible_default_ipv4.address | default('unknown') }}"
+
+    - name: Verify supported Ubuntu version
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version in ["22.04", "24.04"]
+        success_msg: "Supported Ubuntu target"
+
