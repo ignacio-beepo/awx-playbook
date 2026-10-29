@@ -1,0 +1,279 @@
+---
+- name: CIS Ubuntu 24.04 Hardening
+  hosts: localhost
+  connection: local
+  become: yes
+
+  tasks:
+    - name: CIS 6.3.1 | Gather package facts
+      package_facts:
+        manager: auto
+
+    - name: CIS 6.3.1 | Ensure AIDE is installed
+      apt:
+        name: aide
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: Configure AIDE database
+      lineinfile:
+        path: /etc/aide/aide.conf
+        regexp: '^database=file:'
+        line: 'database=file:/var/lib/aide/aide.db'
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: Configure AIDE database output
+      lineinfile:
+        path: /etc/aide/aide.conf
+        regexp: '^database_out=file:'
+        line: 'database_out=file:/var/lib/aide/aide.db.new'
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: Initialize AIDE database
+      command: /usr/sbin/aideinit -y -f
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.1 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, nothing was done"
+      when: "'linux-base' not in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Verify non-symlink path for /sbin
+      command: readlink -f /sbin
+      register: sbin_path
+      changed_when: false
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add auditctl to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/auditctl p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add auditd to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/auditd p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add ausearch to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/ausearch p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add aureport to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/aureport p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add autrace to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/autrace p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 6.3.3 | Add augenrules to AIDE monitoring
+      lineinfile:
+        path: /etc/aide/aide.conf
+        line: '/usr/sbin/augenrules p+i+n+u+g+s+b+acl+xattrs+sha512'
+        insertafter: EOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.2.6 | Check sudo package installed
+      package_facts:
+        manager: auto
+
+    - name: CIS 5.2.6 | Remove timestamp_timeout from sudoers.d
+      replace:
+        path: "{{ item }}"
+        regexp: '^[[:blank:]]*Defaults.*timestamp_timeout[[:blank:]]*=.*$'
+        replace: ''
+      with_fileglob:
+        - /etc/sudoers.d/*
+      when:
+        - "'linux-base' in ansible_facts.packages"
+        - "'sudo' in ansible_facts.packages"
+
+    - name: CIS 5.2.6 | Set sudo timestamp_timeout
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^[[:blank:]]*Defaults.*timestamp_timeout[[:blank:]]*='
+        line: 'Defaults timestamp_timeout=15'
+        validate: '/usr/sbin/visudo -qcf %s'
+      when:
+        - "'linux-base' in ansible_facts.packages"
+        - "'sudo' in ansible_facts.packages"
+
+    - name: CIS 5.2.6 | Remediation not applicable for sudo
+      debug:
+        msg: "Remediation is not applicable, sudo package not installed"
+      when:
+        - "'linux-base' not in ansible_facts.packages or 'sudo' not in ansible_facts.packages"
+
+    - name: CIS 5.2.3 | Ensure sudo log file exists
+      file:
+        path: /var/log/sudo.log
+        state: touch
+        owner: root
+        group: root
+        mode: '0600'
+      when:
+        - "'linux-base' in ansible_facts.packages"
+        - "'sudo' in ansible_facts.packages"
+
+    - name: CIS 5.2.3 | Configure sudo logfile
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^[[:blank:]]*Defaults[[:blank:]]+logfile='
+        line: 'Defaults logfile="/var/log/sudo.log"'
+        validate: '/usr/sbin/visudo -qcf %s'
+      when:
+        - "'linux-base' in ansible_facts.packages"
+        - "'sudo' in ansible_facts.packages"
+
+    - name: CIS 5.2.3 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, sudo package not installed"
+      when: "'linux-base' not in ansible_facts.packages or 'sudo' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.1.1 | Ensure libpam-runtime is installed
+      apt:
+        name: libpam-runtime
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.1.1 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.1.3 | Configure root_unlock_time
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^[[:space:]]*root_unlock_time[[:space:]]*='
+        line: 'root_unlock_time = 60'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.1.3 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.2.4 | Configure pam_pwquality retry
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^\s*password\s+requisite\s+pam_pwquality\.so'
+        line: 'password   requisite   pam_pwquality.so retry=3'
+        insertbefore: BOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.2.4 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.1.1 | Configure deny in faillock
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^[[:space:]]*deny[[:space:]]*='
+        line: 'deny = 4'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.1.1 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.1.2 | Configure unlock_time in faillock
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^[[:space:]]*unlock_time[[:space:]]*='
+        line: 'unlock_time = 900'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.1.2 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.2.3 | Configure pam_pwquality retry
+      lineinfile:
+        path: /etc/pam.d/common-password
+        regexp: '^\s*password\s+requisite\s+pam_pwquality\.so'
+        line: 'password requisite pam_pwquality.so retry=3'
+        insertbefore: BOF
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.2.3 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.1.3 | Ensure libpam-pwquality is installed
+      apt:
+        name: libpam-pwquality
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.1.3 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.2.3 | Configure dcredit in pwquality
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^[[:space:]]*dcredit[[:space:]]*='
+        line: 'dcredit = -1'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.2.3 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.2.6 | Configure dictcheck in pwquality
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^[[:space:]]*dictcheck[[:space:]]*='
+        line: 'dictcheck = 1'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.2.6 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
+	  
+	- name: CIS 5.3.3.2.1 | Configure difok in pwquality
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^[[:space:]]*difok[[:space:]]*='
+        line: 'difok = 2'
+        create: yes
+      when: "'linux-base' in ansible_facts.packages"
+
+    - name: CIS 5.3.3.2.1 | Remediation not applicable
+      debug:
+        msg: "Remediation is not applicable, linux-base package not installed"
+      when: "'linux-base' not in ansible_facts.packages"
