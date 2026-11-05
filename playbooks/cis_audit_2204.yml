@@ -1,7 +1,7 @@
 
 ---
 - name: Ubuntu 22.04 CIS Benchmark Audit
-  hosts: ubuntu_2204
+  hosts: "ubuntu 22.04"
   become: true
   gather_facts: true
 
