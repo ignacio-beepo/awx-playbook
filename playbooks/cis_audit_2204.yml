@@ -1,0 +1,44 @@
+
+---
+- name: Ubuntu 22.04 CIS Benchmark Audit
+  hosts: ubuntu_2204
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Validate operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version == "22.04"
+        fail_msg: "This playbook only supports Ubuntu 22.04"
+
+    - name: Initialize CIS audit results
+      ansible.builtin.set_fact:
+        cis_results: []
+
+    - name: Execute Section 5 audit controls
+      ansible.builtin.include_tasks:
+        file: ../controls/ubuntu2204/section_5.yml
+
+    - name: Calculate audit statistics
+      ansible.builtin.set_fact:
+        cis_total: "{{ cis_results | length }}"
+        cis_passed: >-
+          {{ cis_results | selectattr('status', 'equalto', 'PASS') | list | length }}
+        cis_failed: >-
+          {{ cis_results | selectattr('status', 'equalto', 'FAIL') | list | length }}
+        cis_errors: >-
+          {{ cis_results | selectattr('status', 'equalto', 'ERROR') | list | length }}
+
+    - name: Display audit summary
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          benchmark: "CIS Ubuntu 22.04 v3.0.0"
+          total: "{{ cis_total }}"
+          passed: "{{ cis_passed }}"
+          failed: "{{ cis_failed }}"
+          errors: "{{ cis_errors }}"
+

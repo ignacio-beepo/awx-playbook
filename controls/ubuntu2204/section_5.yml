@@ -1,0 +1,52 @@
+
+---
+- name: "CIS 5.2.4 - Ensure SSH PermitRootLogin is disabled"
+
+  block:
+
+    - name: Get effective SSH configuration
+      ansible.builtin.command:
+        cmd: /usr/sbin/sshd -T
+      register: cis_ssh_config
+      changed_when: false
+      failed_when: false
+
+    - name: Evaluate SSH root login
+      ansible.builtin.set_fact:
+        cis_ssh_status: >-
+          {{
+            'ERROR' if cis_ssh_config.rc != 0
+            else (
+              'PASS'
+              if 'permitrootlogin no' in cis_ssh_config.stdout_lines
+              else 'FAIL'
+            )
+          }}
+
+        cis_ssh_actual: >-
+          {{
+            'Unable to read SSH configuration'
+            if cis_ssh_config.rc != 0
+            else (
+              cis_ssh_config.stdout_lines
+              | select('match', '^permitrootlogin ')
+              | list
+              | first
+              | default('Not found')
+            )
+          }}
+
+    - name: Store CIS audit result
+      ansible.builtin.set_fact:
+        cis_results: >-
+          {{
+            cis_results + [{
+              'cis_id': '5.2.4',
+              'title': 'Ensure SSH PermitRootLogin is disabled',
+              'level': 'L1',
+              'status': cis_ssh_status,
+              'expected': 'permitrootlogin no',
+              'actual': cis_ssh_actual
+            }]
+          }}
+
