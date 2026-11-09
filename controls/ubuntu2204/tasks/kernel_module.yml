@@ -1,0 +1,110 @@
+---
+# Reusable CIS kernel module audit
+# Variables received from section_1.yml:
+#   cis_id
+#   cis_module_name
+#   cis_title
+
+- name: "{{ cis_id }} | Check {{ cis_module_name }} availability"
+  ansible.builtin.shell: |
+    l_mod_name="{{ cis_module_name }}"
+    l_mod_type="fs"
+
+    while IFS= read -r l_mod_path; do
+      if [ -d "$l_mod_path/${l_mod_name//-/\/}" ] &&
+         [ -n "$(ls -A "$l_mod_path/${l_mod_name//-/\/}" 2>/dev/null)" ]; then
+        printf '%s\n' "$l_mod_name exists in $l_mod_path"
+      fi
+    done < <(
+      readlink -e /usr/lib/modules/**/kernel/$l_mod_type ||
+      readlink -e /lib/modules/**/kernel/$l_mod_type
+    )
+  args:
+    executable: /bin/bash
+  register: cis_module_availability
+  changed_when: false
+  failed_when: false
+
+- name: "{{ cis_id }} | Check loaded modules"
+  ansible.builtin.command: lsmod
+  register: cis_module_lsmod
+  changed_when: false
+  when: cis_module_availability.stdout | length > 0
+
+- name: "{{ cis_id }} | Check modprobe configuration"
+  ansible.builtin.command: modprobe --showconfig
+  register: cis_module_modprobe
+  changed_when: false
+  when: cis_module_availability.stdout | length > 0
+
+- name: "{{ cis_id }} | Evaluate module compliance"
+  ansible.builtin.set_fact:
+    cis_module_is_available: >-
+      {{ cis_module_availability.stdout | length > 0 }}
+
+    cis_module_is_loaded: >-
+      {{
+        (cis_module_lsmod.stdout | default(''))
+        | regex_search('(?m)^' ~ cis_module_name ~ '\s')
+        is not none
+      }}
+
+    cis_module_is_blacklisted: >-
+      {{
+        (cis_module_modprobe.stdout | default(''))
+        | regex_search('(?m)^blacklist\s+' ~ cis_module_name ~ '\s*$')
+        is not none
+      }}
+
+    cis_module_install_disabled: >-
+      {{
+        (cis_module_modprobe.stdout | default(''))
+        | regex_search('(?m)^install\s+' ~ cis_module_name ~ '\s+/bin/(false|true)\s*$')
+        is not none
+      }}
+
+- name: "{{ cis_id }} | Determine compliance status"
+  ansible.builtin.set_fact:
+    cis_module_status: >-
+      {{
+        'PASS'
+        if not cis_module_is_available
+        else
+        (
+          'PASS'
+          if (
+            not cis_module_is_loaded
+            and cis_module_is_blacklisted
+            and cis_module_install_disabled
+          )
+          else 'FAIL'
+        )
+      }}
+
+- name: "{{ cis_id }} | Append result"
+  ansible.builtin.set_fact:
+    cis_results: >-
+      {{
+        cis_results | default([])
+        +
+        [{
+          'cis_id': cis_id,
+          'title': cis_title,
+          'level': 'L1',
+          'status': cis_module_status,
+          'expected': 'Module unavailable, or not loaded and disabled',
+          'actual': {
+            'module': cis_module_name,
+            'available': cis_module_is_available,
+            'loaded': cis_module_is_loaded,
+            'blacklisted': cis_module_is_blacklisted,
+            'install_disabled': cis_module_install_disabled
+          },
+          'evidence': {
+            'availability': cis_module_availability.stdout,
+            'lsmod': cis_module_lsmod.stdout | default('Not checked'),
+            'modprobe_config': cis_module_modprobe.stdout | default('Not checked')
+          }
+        }]
+      }}
+

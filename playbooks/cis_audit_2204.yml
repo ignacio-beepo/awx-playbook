@@ -18,6 +18,10 @@
       ansible.builtin.set_fact:
         cis_results: []
 
+    - name: Execute Section 1 audit controls
+      ansible.builtin.include_tasks:
+        file: ../controls/ubuntu2204/section_1.yml
+
     - name: Execute Section 5 audit controls
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2204/section_5.yml

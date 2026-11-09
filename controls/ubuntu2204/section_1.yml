@@ -1,0 +1,28 @@
+---
+# CIS Ubuntu 22.04 - Section 1
+# Kernel Module Controls
+
+- name: Audit CIS kernel module controls
+  ansible.builtin.include_tasks: tasks/kernel_module.yml
+  loop:
+    - id: "1.1.1.1"
+      name: "cramfs"
+      title: "Ensure cramfs kernel module is not available"
+
+    - id: "1.1.1.2"
+      name: "freevxfs"
+      title: "Ensure freevxfs kernel module is not available"
+
+    - id: "1.1.1.3"
+      name: "hfs"
+      title: "Ensure hfs kernel module is not available"
+
+  loop_control:
+    loop_var: cis_control
+    label: "{{ cis_control.id }} - {{ cis_control.name }}"
+
+  vars:
+    cis_id: "{{ cis_control.id }}"
+    cis_module_name: "{{ cis_control.name }}"
+    cis_title: "{{ cis_control.title }}"
+
