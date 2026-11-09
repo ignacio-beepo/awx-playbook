@@ -17,6 +17,31 @@
       name: "hfs"
       title: "Ensure hfs kernel module is not available"
 
+    - id: "1.1.1.4"
+      name: "hfsplus"
+      title: "Ensure hfsplus kernel module is not available"
+
+    - id: "1.1.1.5"
+      name: "jffs2"
+      title: "Ensure jffs2 kernel module is not available"
+
+    - id: "1.1.1.6"
+      name: "overlay"
+      title: "Ensure overlay kernel module is not available"
+
+    - id: "1.1.1.7"
+      name: "squashfs"
+      title: "Ensure squashfs kernel module is not available"
+
+    - id: "1.1.1.8"
+      name: "udf"
+      title: "Ensure udf kernel module is not available"
+
+    - id: "1.1.1.9"
+      name: "usb-storage"
+      title: " Ensure usb-storage kernel module is not available"
+
+
   loop_control:
     loop_var: cis_control
     label: "{{ cis_control.id }} - {{ cis_control.name }}"
