@@ -51,3 +51,10 @@
     cis_module_name: "{{ cis_control.name }}"
     cis_title: "{{ cis_control.title }}"
 
+# ------------------------------------------------------------
+# 1.1.2.1.1 - Configure /tmp
+# ------------------------------------------------------------
+
+- name: "CIS 1.1.2.1.1 | Audit /tmp mount"
+  ansible.builtin.include_tasks: tasks/tmp_mount.yml
+

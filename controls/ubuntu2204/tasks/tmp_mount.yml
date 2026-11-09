@@ -1,0 +1,78 @@
+---
+# ============================================================
+# CIS 1.1.2.1.1
+# Ensure /tmp is tmpfs or a separate partition
+# ============================================================
+
+- name: "CIS 1.1.2.1.1 | Check /tmp mount"
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --output
+      - TARGET,SOURCE,FSTYPE,OPTIONS
+      - --mountpoint
+      - /tmp
+  register: cis_tmp_findmnt
+  changed_when: false
+  failed_when: false
+
+- name: "CIS 1.1.2.1.1 | Check tmp.mount systemd status"
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-enabled
+      - tmp.mount
+  register: cis_tmp_systemd
+  changed_when: false
+  failed_when: false
+
+- name: "CIS 1.1.2.1.1 | Evaluate /tmp mount"
+  ansible.builtin.set_fact:
+    cis_tmp_is_mounted: >-
+      {{ cis_tmp_findmnt.rc == 0 and
+         cis_tmp_findmnt.stdout | length > 0 }}
+
+    cis_tmp_mount_details: >-
+      {{ cis_tmp_findmnt.stdout | default('Not mounted') }}
+
+    cis_tmp_systemd_enabled: >-
+      {{
+        cis_tmp_systemd.stdout | trim
+        not in ['masked', 'disabled', 'not-found', '']
+        and cis_tmp_systemd.rc == 0
+      }}
+
+- name: "CIS 1.1.2.1.1 | Determine compliance status"
+  ansible.builtin.set_fact:
+    cis_tmp_status: >-
+      {{
+        'PASS'
+        if cis_tmp_is_mounted and cis_tmp_systemd_enabled
+        else 'FAIL'
+      }}
+
+- name: "CIS 1.1.2.1.1 | Append audit result"
+  ansible.builtin.set_fact:
+    cis_results: >-
+      {{
+        cis_results | default([])
+        +
+        [{
+          'cis_id': '1.1.2.1.1',
+          'title': 'Ensure /tmp is tmpfs or a separate partition',
+          'level': 'L1',
+          'status': cis_tmp_status,
+          'expected': '/tmp is mounted and tmp.mount is not masked or disabled',
+          'actual': {
+            'mounted': cis_tmp_is_mounted,
+            'mount_details': cis_tmp_mount_details,
+            'systemd_state': cis_tmp_systemd.stdout | default('Unknown')
+          },
+          'evidence': {
+            'findmnt': cis_tmp_findmnt.stdout | default(''),
+            'systemctl': cis_tmp_systemd.stdout | default('')
+          }
+        }]
+      }}
+
