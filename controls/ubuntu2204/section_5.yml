@@ -1,6 +1,6 @@
 
 ---
-- name: "CIS 5.2.4 - Ensure SSH PermitRootLogin is disabled"
+- name: "CIS 5.1.20 - Ensure sshd PermitRootLogin is disabled"
 
   block:
 
@@ -41,8 +41,8 @@
         cis_results: >-
           {{
             cis_results + [{
-              'cis_id': '5.2.4',
-              'title': 'Ensure SSH PermitRootLogin is disabled',
+              'cis_id': '5.1.20',
+              'title': 'Ensure sshd PermitRootLogin is disabled',
               'level': 'L1',
               'status': cis_ssh_status,
               'expected': 'permitrootlogin no',
