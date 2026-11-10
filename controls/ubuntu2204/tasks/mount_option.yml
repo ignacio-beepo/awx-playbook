@@ -39,6 +39,17 @@
         ) is not none
       }}
 
+- name: "{{ cis_id }} | DEBUG mount option evaluation"
+  ansible.builtin.debug:
+    msg:
+      - "CIS ID: {{ cis_id }}"
+      - "Mount path: {{ cis_mount_path }}"
+      - "Required option: {{ cis_mount_option }}"
+      - "Mount options: {{ cis_mount_option_findmnt.stdout }}"
+      - "Is mounted: {{ cis_mount_option_is_mounted }}"
+      - "Option present: {{ cis_mount_option_is_present }}"
+      - "Final status: {{ cis_mount_option_status | default('Not evaluated yet') }}"
+
 - name: "{{ cis_id }} | Determine compliance status"
   ansible.builtin.set_fact:
     cis_mount_option_status: >-
