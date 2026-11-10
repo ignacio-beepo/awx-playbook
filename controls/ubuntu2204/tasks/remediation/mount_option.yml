@@ -1,0 +1,89 @@
+---
+# ============================================================
+# CIS Mount Option Remediation
+#
+# Required variables:
+#   cis_id
+#   cis_title
+#   cis_mount_path
+#   cis_mount_option
+#
+# Optional:
+#   cis_remediate_remount: false
+#
+# Requirements:
+#   ansible.posix collection
+#
+# Behavior:
+#   - Updates /etc/fstab persistently
+#   - Preserves existing mount options
+#   - Does not automatically remount by default
+# ============================================================
+
+- name: "{{ cis_id }} | Read existing fstab entry"
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --fstab
+      - --noheadings
+      - --raw
+      - --output
+      - SOURCE,FSTYPE,OPTIONS
+      - --mountpoint
+      - "{{ cis_mount_path }}"
+  register: cis_rem_mount_fstab
+  changed_when: false
+  failed_when: cis_rem_mount_fstab.rc not in [0, 1]
+
+- name: "{{ cis_id }} | Check whether fstab entry exists"
+  ansible.builtin.set_fact:
+    cis_rem_mount_fstab_exists: >-
+      {{
+        cis_rem_mount_fstab.rc == 0
+        and (cis_rem_mount_fstab.stdout | trim | length > 0)
+      }}
+
+- name: "{{ cis_id }} | Extract existing fstab configuration"
+  ansible.builtin.set_fact:
+    cis_rem_mount_source: "{{ cis_rem_mount_fstab.stdout.split()[0] }}"
+    cis_rem_mount_fstype: "{{ cis_rem_mount_fstab.stdout.split()[1] }}"
+    cis_rem_mount_options: "{{ cis_rem_mount_fstab.stdout.split()[2].split(',') }}"
+  when: cis_rem_mount_fstab_exists | bool
+
+- name: "{{ cis_id }} | Add required mount option"
+  ansible.builtin.set_fact:
+    cis_rem_mount_options_updated: >-
+      {{
+        cis_rem_mount_options
+        if cis_mount_option in cis_rem_mount_options
+        else cis_rem_mount_options + [cis_mount_option]
+      }}
+  when: cis_rem_mount_fstab_exists | bool
+
+- name: "{{ cis_id }} | Update fstab mount options"
+  ansible.posix.mount:
+    path: "{{ cis_mount_path }}"
+    src: "{{ cis_rem_mount_source }}"
+    fstype: "{{ cis_rem_mount_fstype }}"
+    opts: "{{ cis_rem_mount_options_updated | join(',') }}"
+    state: present
+  when:
+    - cis_rem_mount_fstab_exists | bool
+    - cis_mount_option not in cis_rem_mount_options
+
+- name: "{{ cis_id }} | Report missing fstab entry"
+  ansible.builtin.debug:
+    msg: >-
+      Cannot automatically remediate {{ cis_mount_path }}:
+      no matching /etc/fstab entry exists.
+      Manual review is required.
+  when: not (cis_rem_mount_fstab_exists | bool)
+
+- name: "{{ cis_id }} | Remediation result"
+  ansible.builtin.set_fact:
+    cis_remediation_status: >-
+      {{
+        'SUCCESS'
+        if cis_rem_mount_fstab_exists | bool
+        else 'MANUAL_REQUIRED'
+      }}

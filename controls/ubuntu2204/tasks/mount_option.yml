@@ -64,6 +64,13 @@
         )
       }}
 
+# 3. Remediate only when requested and failed
+- name: "{{ cis_id }} | Remediate mount option"
+  ansible.builtin.include_tasks: remediation/mount_option.yml
+  when:
+    - cis_remediate | default(false) | bool
+    - cis_mount_option_status == 'FAIL'
+
 - name: "{{ cis_id }} | Append audit result"
   ansible.builtin.set_fact:
     cis_results: >-
