@@ -1,0 +1,86 @@
+
+---
+# ============================================================
+# Reusable CIS /tmp mount option audit
+#
+# Variables:
+#   cis_id
+#   cis_title
+#   cis_mount_option
+# ============================================================
+
+- name: "{{ cis_id }} | Check /tmp mount options"
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --raw
+      - --output
+      - TARGET,OPTIONS
+      - --mountpoint
+      - /tmp
+  register: cis_tmp_option_findmnt
+  changed_when: false
+
+- name: "{{ cis_id }} | Evaluate /tmp mount option"
+  ansible.builtin.set_fact:
+    cis_tmp_option_mounted: >-
+      {{
+        cis_tmp_option_findmnt.rc == 0
+        and
+        (cis_tmp_option_findmnt.stdout | trim).split() | length == 2
+        and
+        (cis_tmp_option_findmnt.stdout | trim).split()[0] == '/tmp'
+      }}
+
+    cis_tmp_option_present: >-
+      {{
+        cis_tmp_option_findmnt.rc == 0
+        and
+        (
+          cis_mount_option
+          in
+          (
+            (cis_tmp_option_findmnt.stdout | trim).split()[1].split(',')
+            if (cis_tmp_option_findmnt.stdout | trim).split() | length == 2
+            else []
+          )
+        )
+      }}
+
+- name: "{{ cis_id }} | Determine compliance status"
+  ansible.builtin.set_fact:
+    cis_tmp_option_status: >-
+      {{
+        'NOT_APPLICABLE'
+        if not cis_tmp_option_mounted
+        else
+        (
+          'PASS'
+          if cis_tmp_option_present
+          else 'FAIL'
+        )
+      }}
+
+- name: "{{ cis_id }} | Append audit result"
+  ansible.builtin.set_fact:
+    cis_results: >-
+      {{
+        cis_results | default([])
+        +
+        [{
+          'cis_id': cis_id,
+          'title': cis_title,
+          'level': 'L1',
+          'status': cis_tmp_option_status,
+          'expected': 'The /tmp mount must include ' ~ cis_mount_option,
+          'actual': {
+            'mount_option': cis_mount_option,
+            'mounted': cis_tmp_option_mounted,
+            'option_present': cis_tmp_option_present,
+            'mount_details': cis_tmp_option_findmnt.stdout | default('')
+          },
+          'evidence': cis_tmp_option_findmnt.stdout | default('')
+        }]
+      }}
+
