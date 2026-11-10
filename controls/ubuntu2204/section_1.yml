@@ -41,7 +41,6 @@
       name: "usb-storage"
       title: " Ensure usb-storage kernel module is not available"
 
-
   loop_control:
     loop_var: cis_control
     label: "{{ cis_control.id }} - {{ cis_control.name }}"
@@ -58,15 +57,13 @@
 - name: "CIS 1.1.2.1.1 | Audit /tmp mount"
   ansible.builtin.include_tasks: tasks/tmp_mount.yml
 
-
-
 # ------------------------------------------------------------
 # 1.1.2.1.2 - 1.1.2.1.4
 # Configure /tmp mount options
 # ------------------------------------------------------------
 
 - name: Audit CIS /tmp mount options
-  ansible.builtin.include_tasks: tasks/tmp_mount_option.yml
+  ansible.builtin.include_tasks: tasks/mount_option.yml
   loop:
     - id: "1.1.2.1.2"
       option: "nodev"
@@ -86,7 +83,47 @@
 
   vars:
     cis_id: "{{ cis_control.id }}"
-    cis_mount_option: "{{ cis_control.option }}"
     cis_title: "{{ cis_control.title }}"
+    cis_mount_path: "/tmp"
+    cis_mount_option: "{{ cis_control.option }}"
 
+# ------------------------------------------------------------
+# 1.1.2.2.1 - Ensure /dev/shm is tmpfs or a separate partition
+# ------------------------------------------------------------
 
+- name: "CIS 1.1.2.2.1 | Audit /dev/shm mount"
+  ansible.builtin.include_tasks: tasks/mountpoint.yml
+  vars:
+    cis_id: "1.1.2.2.1"
+    cis_title: "Ensure /dev/shm is tmpfs or a separate partition"
+    cis_mount_path: "/dev/shm"
+
+# ------------------------------------------------------------
+# 1.1.2.2.2 - 1.1.2.2.4
+# Configure /dev/shm mount options
+# ------------------------------------------------------------
+
+- name: Audit CIS /dev/shm mount options
+  ansible.builtin.include_tasks: tasks/mount_option.yml
+  loop:
+    - id: "1.1.2.2.2"
+      option: "nodev"
+      title: "Ensure nodev option set on /dev/shm partition"
+
+    - id: "1.1.2.2.3"
+      option: "nosuid"
+      title: "Ensure nosuid option set on /dev/shm partition"
+
+    - id: "1.1.2.2.4"
+      option: "noexec"
+      title: "Ensure noexec option set on /dev/shm partition"
+
+  loop_control:
+    loop_var: cis_control
+    label: "{{ cis_control.id }} - {{ cis_control.option }}"
+
+  vars:
+    cis_id: "{{ cis_control.id }}"
+    cis_title: "{{ cis_control.title }}"
+    cis_mount_path: "/dev/shm"
+    cis_mount_option: "{{ cis_control.option }}"

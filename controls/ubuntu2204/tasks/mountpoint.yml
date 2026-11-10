@@ -1,0 +1,57 @@
+---
+# Generic CIS mountpoint audit
+#
+# Variables:
+#   cis_id
+#   cis_title
+#   cis_mount_path
+
+- name: "{{ cis_id }} | Check {{ cis_mount_path }} mount"
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --raw
+      - --output
+      - TARGET,SOURCE,FSTYPE,OPTIONS
+      - --mountpoint
+      - "{{ cis_mount_path }}"
+  register: cis_mount_findmnt
+  changed_when: false
+  failed_when: cis_mount_findmnt.rc not in [0, 1]
+
+- name: "{{ cis_id }} | Evaluate mountpoint"
+  ansible.builtin.set_fact:
+    cis_mount_is_mounted: >-
+      {{
+        cis_mount_findmnt.rc == 0
+        and cis_mount_findmnt.stdout | trim | length > 0
+      }}
+
+- name: "{{ cis_id }} | Determine compliance status"
+  ansible.builtin.set_fact:
+    cis_mount_status: >-
+      {{
+        'PASS' if cis_mount_is_mounted else 'FAIL'
+      }}
+
+- name: "{{ cis_id }} | Append audit result"
+  ansible.builtin.set_fact:
+    cis_results: >-
+      {{
+        cis_results | default([])
+        +
+        [{
+          'cis_id': cis_id,
+          'title': cis_title,
+          'level': 'L1',
+          'status': cis_mount_status,
+          'expected': cis_mount_path ~ ' must be a separate mounted filesystem',
+          'actual': {
+            'mount_path': cis_mount_path,
+            'mounted': cis_mount_is_mounted,
+            'mount_details': cis_mount_findmnt.stdout | default('')
+          },
+          'evidence': cis_mount_findmnt.stdout | default('Not mounted')
+        }]
+      }}

@@ -1,0 +1,77 @@
+---
+# Generic CIS mount option audit
+#
+# Variables:
+#   cis_id
+#   cis_title
+#   cis_mount_path
+#   cis_mount_option
+
+- name: "{{ cis_id }} | Check {{ cis_mount_path }} mount options"
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - --noheadings
+      - --raw
+      - --output
+      - OPTIONS
+      - --mountpoint
+      - "{{ cis_mount_path }}"
+  register: cis_mount_option_findmnt
+  changed_when: false
+  failed_when: cis_mount_option_findmnt.rc not in [0, 1]
+
+- name: "{{ cis_id }} | Evaluate mount option"
+  ansible.builtin.set_fact:
+    cis_mount_option_is_mounted: >-
+      {{
+        cis_mount_option_findmnt.rc == 0
+        and cis_mount_option_findmnt.stdout | trim | length > 0
+      }}
+
+    cis_mount_option_is_present: >-
+      {{
+        cis_mount_option_findmnt.rc == 0
+        and
+        (
+          cis_mount_option_findmnt.stdout | trim
+          | regex_search('(^|,)' ~ cis_mount_option ~ '(,|$)')
+        ) is not none
+      }}
+
+- name: "{{ cis_id }} | Determine compliance status"
+  ansible.builtin.set_fact:
+    cis_mount_option_status: >-
+      {{
+        'NOT_APPLICABLE'
+        if not cis_mount_option_is_mounted
+        else
+        (
+          'PASS'
+          if cis_mount_option_is_present
+          else 'FAIL'
+        )
+      }}
+
+- name: "{{ cis_id }} | Append audit result"
+  ansible.builtin.set_fact:
+    cis_results: >-
+      {{
+        cis_results | default([])
+        +
+        [{
+          'cis_id': cis_id,
+          'title': cis_title,
+          'level': 'L1',
+          'status': cis_mount_option_status,
+          'expected': cis_mount_path ~ ' must include mount option ' ~ cis_mount_option,
+          'actual': {
+            'mount_path': cis_mount_path,
+            'mount_option': cis_mount_option,
+            'mounted': cis_mount_option_is_mounted,
+            'option_present': cis_mount_option_is_present,
+            'mount_options': cis_mount_option_findmnt.stdout | default('')
+          },
+          'evidence': cis_mount_option_findmnt.stdout | default('Not mounted')
+        }]
+      }}
