@@ -3,7 +3,7 @@
 # Kernel Module Controls
 
 - name: Audit CIS kernel module controls
-  ansible.builtin.include_tasks: tasks/kernel_module.yml
+  ansible.builtin.include_tasks: ../common/tasks/kernel_module.yml
   loop:
     - id: "1.1.1.1"
       name: "cramfs"
@@ -28,10 +28,6 @@
     - id: "1.1.1.6"
       name: "overlay"
       title: "Ensure overlay kernel module is not available"
-
-    - id: "1.1.1.7"
-      name: "squashfs"
-      title: "Ensure squashfs kernel module is not available"
 
     - id: "1.1.1.8"
       name: "udf"
