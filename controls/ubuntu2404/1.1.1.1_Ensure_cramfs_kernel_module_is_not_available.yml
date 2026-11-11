@@ -12,18 +12,90 @@
   failed_when: false
   changed_when: false
 
-- name: CIS 1.1.1.1 | Ensure cramfs kernel module is not available
+- name: Determine compliance status
+  set_fact:
+    cramfs_compliant: >-
+      {{
+        cramfs_loaded.stdout == "" and
+        ('blacklist cramfs' in cramfs_config.stdout) and
+        (
+          'install cramfs /bin/false' in cramfs_config.stdout or
+          'install cramfs /bin/true' in cramfs_config.stdout
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - cramfs kernel module is disabled'
+        if cramfs_compliant
+        else
+        'FAIL - cramfs kernel module is available. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create cramfs blacklist configuration
+  copy:
+    dest: /etc/modprobe.d/60-cramfs.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      install cramfs /bin/false
+      blacklist cramfs
+  when: not cramfs_compliant
+
+- name: Unload cramfs module
+  shell: |
+    modprobe -r cramfs 2>/dev/null || true
+    rmmod cramfs 2>/dev/null || true
+  when: not cramfs_compliant
+  failed_when: false
+  changed_when: false
+
+##############################################################################
+# RECHECK AFTER REMEDIATION
+##############################################################################
+
+- name: Recheck cramfs loaded status
+  shell: lsmod | grep '^cramfs'
+  register: cramfs_loaded_verify
+  failed_when: false
+  changed_when: false
+
+- name: Recheck cramfs configuration
+  shell: |
+    modprobe --showconfig | grep -P -- '\b(install|blacklist)\h+cramfs\b'
+  register: cramfs_config_verify
+  failed_when: false
+  changed_when: false
+
+- name: Final CIS Validation
   assert:
     that:
-      - cramfs_loaded.stdout == ""
-      - "'blacklist cramfs' in cramfs_config.stdout"
-      - "'install cramfs /bin/false' in cramfs_config.stdout or 'install cramfs /bin/true' in cramfs_config.stdout"
-    success_msg: "PASS - cramfs kernel module is disabled"
-    fail_msg: |
-      FAIL - cramfs kernel module is available
+      - cramfs_loaded_verify.stdout == ""
+      - "'blacklist cramfs' in cramfs_config_verify.stdout"
+      - "'install cramfs /bin/false' in cramfs_config_verify.stdout or 'install cramfs /bin/true' in cramfs_config_verify.stdout"
+    success_msg: |
+      PASS - CIS 1.1.1.1 compliant
 
-      Loaded:
-      {{ cramfs_loaded.stdout | default('Not Loaded') }}
+      Validation Result:
+      - cramfs not loaded
+      - cramfs blacklisted
+      - cramfs disabled
 
       Config:
-      {{ cramfs_config.stdout | default('Not Configured') }}
+      {{ cramfs_config_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 1.1.1.1 non-compliant
+
+      Loaded Module:
+      {{ cramfs_loaded_verify.stdout | default('Not Loaded') }}
+
+      Config:
+      {{ cramfs_config_verify.stdout | default('Not Configured') }}
