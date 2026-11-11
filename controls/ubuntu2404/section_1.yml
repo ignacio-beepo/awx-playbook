@@ -24,60 +24,21 @@
       name: "hfsplus"
       title: "Ensure hfsplus kernel module is not available"
 
-    # 1.1.1.5 - jffs2
     - id: "1.1.1.5"
+      name: "jffs2"
       title: "Ensure jffs2 kernel module is not available"
-      module_path_name: "jffs2"
-      module_name: "jffs2"
-      module_type: "fs"
-      loaded_pattern: "jffs2"
-      level_server: "L1"
-      level_workstation: "L1"
-      remediation_policy: "safe"
 
-    # 1.1.1.6 - overlay
     - id: "1.1.1.6"
+      name: "overlay"
       title: "Ensure overlay kernel module is not available"
-      module_path_name: "overlayfs"
-      module_name: "overlay"
-      module_type: "fs"
-      loaded_pattern: "overlay"
-      level_server: "L2"
-      level_workstation: "L2"
-      remediation_policy: "manual"
 
-    # 1.1.1.8 - udf
     - id: "1.1.1.8"
+      name: "udf"
       title: "Ensure udf kernel module is not available"
-      module_path_name: "udf"
-      module_name: "udf"
-      module_type: "fs"
-      loaded_pattern: "udf"
-      level_server: "L2"
-      level_workstation: "L2"
-      remediation_policy: "manual"
 
-    # 1.1.1.9 - firewire-core
     - id: "1.1.1.9"
-      title: "Ensure firewire-core kernel module is not available"
-      module_path_name: "firewire"
-      module_name: "firewire_core"
-      module_type: "drivers"
-      loaded_pattern: "firewire(_|-)core"
-      level_server: "L1"
-      level_workstation: "L2"
-      remediation_policy: "conditional"
-
-    # 1.1.1.10 - usb-storage
-    - id: "1.1.1.10"
+      name: "usb-storage"
       title: "Ensure usb-storage kernel module is not available"
-      module_path_name: "usb-storage"
-      module_name: "usb_storage"
-      module_type: "drivers"
-      loaded_pattern: "usb(_|-)storage"
-      level_server: "L1"
-      level_workstation: "L2"
-      remediation_policy: "conditional"
 
   loop_control:
     loop_var: cis_control
