@@ -1,115 +1,34 @@
----
 - name: CIS 1.1.1.1 Ensure cramfs kernel module is not available
-  hosts: all
+  hosts: ubuntu_2404
   become: true
   gather_facts: false
 
-  vars:
-    module_name: cramfs
-
   tasks:
-    #################################################
-    # AUDIT
-    #################################################
-
-    - name: Check if cramfs module exists
-      shell: |
-        MOD_NAME="cramfs"
-        MOD_TYPE="fs"
-
-        while IFS= read -r mod_path; do
-          if [ -d "$mod_path/${MOD_NAME//-/\/}" ] && \
-             [ -n "$(ls -A "$mod_path/${MOD_NAME//-/\/}" 2>/dev/null)" ]; then
-            echo "$MOD_NAME exists in $mod_path"
-          fi
-        done < <(
-          readlink -e /usr/lib/modules/*/kernel/$MOD_TYPE 2>/dev/null
-          readlink -e /lib/modules/*/kernel/$MOD_TYPE 2>/dev/null
-        )
-      args:
-        executable: /bin/bash
-      register: cramfs_exists
-      changed_when: false
-      failed_when: false
-
     - name: Check if cramfs module is loaded
       shell: lsmod | grep '^cramfs'
       register: cramfs_loaded
-      changed_when: false
       failed_when: false
+      changed_when: false
 
-    - name: Check if cramfs is disabled
+    - name: Check if cramfs module is disabled
       shell: |
         modprobe --showconfig | grep -P -- '\b(install|blacklist)\h+cramfs\b'
       register: cramfs_config
-      changed_when: false
       failed_when: false
-
-    - name: Display audit result
-      debug:
-        msg:
-          - "Module Exists : {{ 'YES' if cramfs_exists.stdout != '' else 'NO' }}"
-          - "Module Loaded : {{ 'YES' if cramfs_loaded.stdout != '' else 'NO' }}"
-          - "Config Found  : {{ cramfs_config.stdout_lines }}"
-
-    - name: Determine compliance status
-      set_fact:
-        cis_1_1_1_1_compliant: >-
-          {{
-            (cramfs_exists.stdout == '')
-            or
-            (
-              cramfs_loaded.stdout == ''
-              and
-              ('blacklist cramfs' in cramfs_config.stdout)
-              and
-              (
-                'install cramfs /bin/false' in cramfs_config.stdout
-                or
-                'install cramfs /bin/true' in cramfs_config.stdout
-              )
-            )
-          }}
-
-    - name: Show compliance status
-      debug:
-        msg: >-
-          {{
-            'COMPLIANT - cramfs kernel module is not available'
-            if cis_1_1_1_1_compliant
-            else
-            'NON-COMPLIANT - cramfs kernel module is available'
-          }}
-
-    #################################################
-    # REMEDIATION
-    #################################################
-
-    - name: Unload cramfs module
-      shell: |
-        modprobe -r cramfs 2>/dev/null || true
-        rmmod cramfs 2>/dev/null || true
-      when: not cis_1_1_1_1_compliant
-
-    - name: Disable cramfs kernel module
-      copy:
-        dest: /etc/modprobe.d/60-cramfs.conf
-        owner: root
-        group: root
-        mode: "0644"
-        content: |
-          install cramfs /bin/false
-          blacklist cramfs
-      when: not cis_1_1_1_1_compliant
-
-    - name: Verify remediation
-      shell: |
-        modprobe --showconfig | grep -P -- '\b(install|blacklist)\h+cramfs\b'
-      register: remediation_check
       changed_when: false
 
-    - name: Final result
-      debug:
-        msg:
-          - "Remediation completed."
-          - "{{ remediation_check.stdout_lines }}"
+    - name: CIS 1.1.1.1 | Ensure cramfs kernel module is not available
+      assert:
+        that:
+          - cramfs_loaded.stdout == ""
+          - "'blacklist cramfs' in cramfs_config.stdout"
+          - "'install cramfs /bin/false' in cramfs_config.stdout or 'install cramfs /bin/true' in cramfs_config.stdout"
+        success_msg: "PASS - cramfs kernel module is disabled"
+        fail_msg: |
+          FAIL - cramfs kernel module is available
+
+          Loaded Module:
+          {{ cramfs_loaded.stdout | default('Not Loaded') }}
+
+          Current Configuration:
+          {{ cramfs_config.stdout | default('Not Configured') }}
