@@ -16,13 +16,17 @@
       ansible.builtin.set_fact:
         cis_results: []
 
-    - name: Execute Section 1 Filesystem
-      ansible.builtin.include_tasks:
-        file: ../controls/ubuntu2404/section_1.yml
+    # - name: Execute Section 1 Filesystem
+    #   ansible.builtin.include_tasks:
+    #     file: ../controls/ubuntu2404/section_1.yml
 
-    - name: Execute Section 5 audit controls
+    # - name: Execute Section 5 audit controls
+    #   ansible.builtin.include_tasks:
+    #     file: ../controls/ubuntu2404/section_5.yml
+
+    - name: "1.1.1.1 | Ensure cramfs kernel module is not available"
       ansible.builtin.include_tasks:
-        file: ../controls/ubuntu2404/section_5.yml
+        file: ../controls/ubuntu2404/1.1.1.1_Ensure_cramfs_kernel_module_is_not_available.yml
 
     - name: Calculate audit statistics
       ansible.builtin.set_fact:
