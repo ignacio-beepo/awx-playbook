@@ -1,0 +1,23 @@
+---
+# Reusable CIS kernel module remediation
+
+- name: "{{ cis_id }} | Unload module"
+  ansible.builtin.shell: |
+    modprobe -r {{ cis_module_name }} 2>/dev/null || true
+    rmmod {{ cis_module_name }} 2>/dev/null || true
+  changed_when: false
+
+- name: "{{ cis_id }} | Disable module loading"
+  ansible.builtin.blockinfile:
+    path: "/etc/modprobe.d/60-{{ cis_module_name }}.conf"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    block: |
+      install {{ cis_module_name }} /bin/false
+      blacklist {{ cis_module_name }}
+
+- name: "{{ cis_id }} | Reload modprobe configuration"
+  ansible.builtin.command: depmod -a
+  changed_when: true

@@ -1,0 +1,39 @@
+---
+# CIS Ubuntu 24.04 v2.0.0
+# Section 1 - Filesystem
+
+# ------------------------------------------------------------
+# 1.1.1.1 - Ensure cramfs kernel module is not available
+# 1.1.1.2 - Ensure freevxfs kernel module is not available
+# 1.1.1.3 - Ensure hfs kernel module is not available
+# 1.1.1.4 - Ensure hfsplus kernel module is not available
+# ------------------------------------------------------------
+
+- name: Audit CIS filesystem kernel modules
+  ansible.builtin.include_tasks: tasks/kernel_module.yml
+
+  loop:
+    - id: "1.1.1.1"
+      name: "cramfs"
+      title: "Ensure cramfs kernel module is not available"
+
+    - id: "1.1.1.2"
+      name: "freevxfs"
+      title: "Ensure freevxfs kernel module is not available"
+
+    - id: "1.1.1.3"
+      name: "hfs"
+      title: "Ensure hfs kernel module is not available"
+
+    - id: "1.1.1.4"
+      name: "hfsplus"
+      title: "Ensure hfsplus kernel module is not available"
+
+  loop_control:
+    loop_var: cis_control
+    label: "{{ cis_control.id }} - {{ cis_control.name }}"
+
+  vars:
+    cis_id: "{{ cis_control.id }}"
+    cis_module_name: "{{ cis_control.name }}"
+    cis_title: "{{ cis_control.title }}"
