@@ -1,7 +1,5 @@
 - name: CIS 1.1.1.1 Ensure cramfs kernel module is not available
-  hosts: ubuntu_2404
   become: true
-  gather_facts: false
 
   tasks:
     - name: Check if cramfs module is loaded
