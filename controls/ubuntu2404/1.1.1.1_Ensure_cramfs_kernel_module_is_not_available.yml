@@ -1,32 +1,29 @@
-- name: CIS 1.1.1.1 Ensure cramfs kernel module is not available
-  become: true
+---
+- name: Check if cramfs module is loaded
+  shell: lsmod | grep '^cramfs'
+  register: cramfs_loaded
+  failed_when: false
+  changed_when: false
 
-  tasks:
-    - name: Check if cramfs module is loaded
-      shell: lsmod | grep '^cramfs'
-      register: cramfs_loaded
-      failed_when: false
-      changed_when: false
+- name: Check cramfs configuration
+  shell: |
+    modprobe --showconfig | grep -P -- '\b(install|blacklist)\h+cramfs\b'
+  register: cramfs_config
+  failed_when: false
+  changed_when: false
 
-    - name: Check if cramfs module is disabled
-      shell: |
-        modprobe --showconfig | grep -P -- '\b(install|blacklist)\h+cramfs\b'
-      register: cramfs_config
-      failed_when: false
-      changed_when: false
+- name: CIS 1.1.1.1 | Ensure cramfs kernel module is not available
+  assert:
+    that:
+      - cramfs_loaded.stdout == ""
+      - "'blacklist cramfs' in cramfs_config.stdout"
+      - "'install cramfs /bin/false' in cramfs_config.stdout or 'install cramfs /bin/true' in cramfs_config.stdout"
+    success_msg: "PASS - cramfs kernel module is disabled"
+    fail_msg: |
+      FAIL - cramfs kernel module is available
 
-    - name: CIS 1.1.1.1 | Ensure cramfs kernel module is not available
-      assert:
-        that:
-          - cramfs_loaded.stdout == ""
-          - "'blacklist cramfs' in cramfs_config.stdout"
-          - "'install cramfs /bin/false' in cramfs_config.stdout or 'install cramfs /bin/true' in cramfs_config.stdout"
-        success_msg: "PASS - cramfs kernel module is disabled"
-        fail_msg: |
-          FAIL - cramfs kernel module is available
+      Loaded:
+      {{ cramfs_loaded.stdout | default('Not Loaded') }}
 
-          Loaded Module:
-          {{ cramfs_loaded.stdout | default('Not Loaded') }}
-
-          Current Configuration:
-          {{ cramfs_config.stdout | default('Not Configured') }}
+      Config:
+      {{ cramfs_config.stdout | default('Not Configured') }}
