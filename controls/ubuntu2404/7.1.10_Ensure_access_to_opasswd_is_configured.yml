@@ -1,0 +1,129 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit /etc/security/opasswd
+  shell: |
+    if [ -e /etc/security/opasswd ]; then
+      stat -Lc '%n|%a|%u|%g' /etc/security/opasswd
+    fi
+  register: opasswd_audit
+  changed_when: false
+  failed_when: false
+
+- name: Audit /etc/security/opasswd.old
+  shell: |
+    if [ -e /etc/security/opasswd.old ]; then
+      stat -Lc '%n|%a|%u|%g' /etc/security/opasswd.old
+    fi
+  register: opasswd_old_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    opasswd_compliant: >-
+      {{
+        (
+          opasswd_audit.stdout == '' or
+          (
+            (opasswd_audit.stdout.split('|')[1] | int <= 600) and
+            (opasswd_audit.stdout.split('|')[2] == '0') and
+            (opasswd_audit.stdout.split('|')[3] == '0')
+          )
+        )
+        and
+        (
+          opasswd_old_audit.stdout == '' or
+          (
+            (opasswd_old_audit.stdout.split('|')[1] | int <= 600) and
+            (opasswd_old_audit.stdout.split('|')[2] == '0') and
+            (opasswd_old_audit.stdout.split('|')[3] == '0')
+          )
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/security/opasswd access is correctly configured'
+        if opasswd_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Secure /etc/security/opasswd
+  file:
+    path: /etc/security/opasswd
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not opasswd_compliant
+    - opasswd_audit.stdout != ""
+
+- name: Secure /etc/security/opasswd.old
+  file:
+    path: /etc/security/opasswd.old
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - not opasswd_compliant
+    - opasswd_old_audit.stdout != ""
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/security/opasswd
+  shell: |
+    if [ -e /etc/security/opasswd ]; then
+      stat -Lc '%n|%a|%u|%g' /etc/security/opasswd
+    fi
+  register: opasswd_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck /etc/security/opasswd.old
+  shell: |
+    if [ -e /etc/security/opasswd.old ]; then
+      stat -Lc '%n|%a|%u|%g' /etc/security/opasswd.old
+    fi
+  register: opasswd_old_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - opasswd_verify.stdout == '' or ((opasswd_verify.stdout.split('|')[1] | int <= 600) and (opasswd_verify.stdout.split('|')[2] == '0') and (opasswd_verify.stdout.split('|')[3] == '0'))
+      - opasswd_old_verify.stdout == '' or ((opasswd_old_verify.stdout.split('|')[1] | int <= 600) and (opasswd_old_verify.stdout.split('|')[2] == '0') and (opasswd_old_verify.stdout.split('|')[3] == '0'))
+
+    success_msg: |
+      PASS - CIS 7.1.10 compliant
+
+      Validation Result:
+      - /etc/security/opasswd permissions verified
+      - /etc/security/opasswd owner = root
+      - /etc/security/opasswd group = root
+      - /etc/security/opasswd.old permissions verified (if present)
+
+    fail_msg: |
+      FAIL - CIS 7.1.10 non-compliant
+
+      /etc/security/opasswd:
+      {{ opasswd_verify.stdout | default('Not Present') }}
+
+      /etc/security/opasswd.old:
+      {{ opasswd_old_verify.stdout | default('Not Present') }}
