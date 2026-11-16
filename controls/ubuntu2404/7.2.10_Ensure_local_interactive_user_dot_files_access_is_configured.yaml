@@ -1,0 +1,174 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit interactive user dot files
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6 ":" $4}' /etc/passwd | while IFS=: read user home gid; do
+
+      [ -d "$home" ] || continue
+
+      primary_group=$(getent group "$gid" | cut -d: -f1)
+
+      find "$home" -maxdepth 1 -type f -name ".*" | while read file; do
+
+        base=$(basename "$file")
+
+        mode=$(stat -Lc '%a' "$file")
+        owner=$(stat -Lc '%U' "$file")
+        group=$(stat -Lc '%G' "$file")
+
+        # Forbidden files
+        if [[ "$base" == ".forward" || "$base" == ".rhost" || "$base" == ".netrc" ]]; then
+          echo "FORBIDDEN:$file"
+          continue
+        fi
+
+        # .bash_history must be 600 or stricter
+        if [[ "$base" == ".bash_history" ]]; then
+          [ "$mode" -le 600 ] || echo "BAD_MODE:$file:$mode"
+        else
+          [ "$mode" -le 644 ] || echo "BAD_MODE:$file:$mode"
+        fi
+
+        [ "$owner" = "$user" ] || echo "BAD_OWNER:$file:$owner:$user"
+        [ "$group" = "$primary_group" ] || echo "BAD_GROUP:$file:$group:$primary_group"
+
+      done
+    done
+  register: dotfile_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    dotfiles_compliant: "{{ dotfile_audit.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Interactive user dot files comply with CIS 7.2.10'
+        if dotfiles_compliant
+        else
+        'FAIL - Interactive user dot files are non-compliant. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate dot file permissions and ownership
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6 ":" $4}' /etc/passwd | while IFS=: read user home gid; do
+
+      [ -d "$home" ] || continue
+
+      primary_group=$(getent group "$gid" | cut -d: -f1)
+
+      find "$home" -maxdepth 1 -type f -name ".*" | while read file; do
+
+        base=$(basename "$file")
+
+        # Skip files that must be investigated manually
+        if [[ "$base" == ".forward" || "$base" == ".rhost" ]]; then
+          continue
+        fi
+
+        # Correct ownership
+        chown "$user":"$primary_group" "$file"
+
+        # .bash_history => 600
+        if [[ "$base" == ".bash_history" ]]; then
+          chmod 600 "$file"
+        else
+          chmod go-w "$file"
+          chmod u-x "$file"
+        fi
+
+      done
+    done
+  when: not dotfiles_compliant
+
+- name: Report .forward and .rhost files for manual investigation
+  shell: |
+    find /home -xdev \( -name ".forward" -o -name ".rhost" \) -type f
+  register: forbidden_dotfiles
+  changed_when: false
+  failed_when: false
+  when: not dotfiles_compliant
+
+- name: Display forbidden files
+  debug:
+    msg: |
+      Manual investigation required:
+      {{ forbidden_dotfiles.stdout | default('No .forward or .rhost files found') }}
+  when:
+    - not dotfiles_compliant
+    - forbidden_dotfiles is defined
+
+##############################################################################
+# RECHECK AFTER REMEDIATION
+##############################################################################
+
+- name: Re-audit interactive user dot files
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6 ":" $4}' /etc/passwd | while IFS=: read user home gid; do
+
+      [ -d "$home" ] || continue
+
+      primary_group=$(getent group "$gid" | cut -d: -f1)
+
+      find "$home" -maxdepth 1 -type f -name ".*" | while read file; do
+
+        base=$(basename "$file")
+
+        mode=$(stat -Lc '%a' "$file")
+        owner=$(stat -Lc '%U' "$file")
+        group=$(stat -Lc '%G' "$file")
+
+        if [[ "$base" == ".forward" || "$base" == ".rhost" || "$base" == ".netrc" ]]; then
+          echo "FORBIDDEN:$file"
+          continue
+        fi
+
+        if [[ "$base" == ".bash_history" ]]; then
+          [ "$mode" -le 600 ] || echo "BAD_MODE:$file:$mode"
+        else
+          [ "$mode" -le 644 ] || echo "BAD_MODE:$file:$mode"
+        fi
+
+        [ "$owner" = "$user" ] || echo "BAD_OWNER:$file:$owner:$user"
+        [ "$group" = "$primary_group" ] || echo "BAD_GROUP:$file:$group:$primary_group"
+
+      done
+    done
+  register: dotfile_audit_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - dotfile_audit_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.10 compliant
+
+      Validation Result:
+      - Interactive user dot files verified
+      - Ownership correctly assigned
+      - Group ownership correctly assigned
+      - Permissions properly restricted
+      - No prohibited dot files detected
+
+    fail_msg: |
+      FAIL - CIS 7.2.10 non-compliant
+
+      Remaining Findings:
+      {{ dotfile_audit_verify.stdout | default('Unknown') }}
