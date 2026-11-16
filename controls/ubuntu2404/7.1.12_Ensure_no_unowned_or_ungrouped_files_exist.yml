@@ -5,21 +5,24 @@
 
 - name: Audit unowned or ungrouped files and directories
   shell: |
-    find / -xdev \( -nouser -o -nogroup \) -print 2>/dev/null
+    find / \( -nouser -o -nogroup \) -print 2>/dev/null
   register: orphaned_files
   changed_when: false
   failed_when: false
 
-- name: Show audit findings
+- name: DEBUG - Raw audit output
   debug:
-    msg: |
-      Findings:
-
-      {{ orphaned_files.stdout | default('None') }}
+    var: orphaned_files.stdout_lines
 
 - name: Determine compliance status
   set_fact:
     orphaned_files_compliant: "{{ orphaned_files.stdout_lines | length == 0 }}"
+
+- name: DEBUG - Compliance status
+  debug:
+    msg:
+      - "orphaned_files_compliant={{ orphaned_files_compliant }}"
+      - "findings={{ orphaned_files.stdout_lines | length }}"
 
 - name: Show audit result
   debug:
@@ -35,15 +38,29 @@
 # REMEDIATION
 ##############################################################################
 
+- name: DEBUG - File(s) to remediate
+  debug:
+    msg: "{{ item }}"
+  loop: "{{ orphaned_files.stdout_lines }}"
+  when:
+    - not orphaned_files_compliant
+    - orphaned_files.stdout_lines | length > 0
+
 - name: Fix ownership of orphaned files and directories
   ansible.builtin.file:
     path: "{{ item }}"
     owner: root
     group: root
   loop: "{{ orphaned_files.stdout_lines }}"
+  register: remediation_output
   when:
     - not orphaned_files_compliant
     - orphaned_files.stdout_lines | length > 0
+
+- name: DEBUG - Remediation results
+  debug:
+    var: remediation_output
+  when: remediation_output is defined
 
 ##############################################################################
 # RECHECK
@@ -51,17 +68,14 @@
 
 - name: Re-audit unowned or ungrouped files and directories
   shell: |
-    find / -xdev \( -nouser -o -nogroup \) -print 2>/dev/null
+    find / \( -nouser -o -nogroup \) -print 2>/dev/null
   register: orphaned_files_verify
   changed_when: false
   failed_when: false
 
-- name: Show recheck findings
+- name: DEBUG - Recheck output
   debug:
-    msg: |
-      Remaining Findings:
-
-      {{ orphaned_files_verify.stdout | default('None') }}
+    var: orphaned_files_verify.stdout_lines
 
 ##############################################################################
 # FINAL VALIDATION
