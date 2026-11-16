@@ -1,0 +1,96 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit duplicate UIDs
+  shell: |
+    awk -F: '{print $3}' /etc/passwd | sort | uniq -d
+  register: duplicate_uids
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    duplicate_uids_compliant: "{{ duplicate_uids.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - No duplicate UIDs exist'
+        if duplicate_uids_compliant
+        else
+        'FAIL - Duplicate UIDs detected. Manual remediation required.'
+      }}
+
+##############################################################################
+# COLLECT DETAILS
+##############################################################################
+
+- name: Collect duplicate UID details
+  shell: |
+    for uid in $(awk -F: '{print $3}' /etc/passwd | sort | uniq -d); do
+      echo "===== DUPLICATE UID: ${uid} ====="
+      awk -F: -v u="$uid" '$3==u {print $0}' /etc/passwd
+      echo
+    done
+  register: duplicate_uid_details
+  changed_when: false
+  failed_when: false
+  when: not duplicate_uids_compliant
+
+- name: Display duplicate UID details
+  debug:
+    msg: |
+      Duplicate UID Entries Found:
+
+      {{ duplicate_uid_details.stdout }}
+
+      Recommended Remediation:
+      1. Review the duplicate UID entries above
+      2. Determine which account should retain the current UID
+      3. Assign a new unique UID to the conflicting account(s)
+      4. Review files owned by the affected UID(s)
+      5. Re-run the CIS audit
+
+      Example:
+      usermod -u <new_uid> <username>
+
+      Review file ownership:
+      find / -xdev -uid <old_uid>
+
+  when: not duplicate_uids_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit duplicate UIDs
+  shell: |
+    awk -F: '{print $3}' /etc/passwd | sort | uniq -d
+  register: duplicate_uids_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - duplicate_uids_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.5 compliant
+
+      Validation Result:
+      - No duplicate UIDs found
+
+    fail_msg: |
+      FAIL - CIS 7.2.5 non-compliant
+
+      Duplicate UID Entries:
+
+      {{ duplicate_uid_details.stdout | default(duplicate_uids_verify.stdout) }}
