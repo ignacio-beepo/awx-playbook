@@ -1,0 +1,93 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit duplicate GIDs
+  shell: |
+    awk -F: '{print $3}' /etc/group | sort | uniq -d
+  register: duplicate_gids
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    duplicate_gids_compliant: "{{ duplicate_gids.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - No duplicate GIDs exist'
+        if duplicate_gids_compliant
+        else
+        'FAIL - Duplicate GIDs detected. Manual remediation required.'
+      }}
+
+##############################################################################
+# COLLECT DETAILS
+##############################################################################
+
+- name: Collect duplicate GID details
+  shell: |
+    for gid in $(awk -F: '{print $3}' /etc/group | sort | uniq -d); do
+      echo "===== DUPLICATE GID: ${gid} ====="
+      awk -F: -v g="$gid" '$3==g {print $0}' /etc/group
+      echo
+    done
+  register: duplicate_gid_details
+  changed_when: false
+  failed_when: false
+  when: not duplicate_gids_compliant
+
+- name: Display duplicate GID details
+  debug:
+    msg: |
+      Duplicate GID Entries Found:
+
+      {{ duplicate_gid_details.stdout }}
+
+      Recommended Remediation:
+      1. Review the duplicate GID entries above
+      2. Determine which group should retain the current GID
+      3. Assign a new unique GID to the conflicting group(s)
+      4. Review file ownerships associated with the old GID
+      5. Re-run the CIS audit
+
+      Example:
+      groupmod -g <new_gid> <group_name>
+
+  when: not duplicate_gids_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit duplicate GIDs
+  shell: |
+    awk -F: '{print $3}' /etc/group | sort | uniq -d
+  register: duplicate_gids_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - duplicate_gids_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.6 compliant
+
+      Validation Result:
+      - No duplicate GIDs found
+
+    fail_msg: |
+      FAIL - CIS 7.2.6 non-compliant
+
+      Duplicate GID Entries:
+
+      {{ duplicate_gid_details.stdout | default(duplicate_gids_verify.stdout) }}
