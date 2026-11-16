@@ -44,14 +44,15 @@
 # REMEDIATION
 ##############################################################################
 
-- name: Assign root ownership to orphaned files and directories
-  shell: |
-    find / -xdev \( -nouser -o -nogroup \) -print0 2>/dev/null | \
-    xargs -0 -r chown root:root
-  when: not orphaned_files_compliant
-  register: remediation_result
-  failed_when: false
-  changed_when: true
+- name: Fix ownership of orphaned files and directories
+  file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+  loop: "{{ orphaned_files.stdout_lines }}"
+  when:
+    - not orphaned_files_compliant
+    - orphaned_files.stdout_lines | length > 0
 
 - name: Show remediation result
   debug:
