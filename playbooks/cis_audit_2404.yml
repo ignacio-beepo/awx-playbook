@@ -27,6 +27,10 @@
     - name: "1.1.1.1 | Ensure cramfs kernel module is not available"
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/1.1.1.1_Ensure_cramfs_kernel_module_is_not_available.yml
+
+    - name: "7.2.8 | Ensure no duplicate group names exist"
+      ansible.builtin.include_tasks:
+        file: ../controls/ubuntu2404/7.2.8_Ensure_no_duplicate_group_names_exist.yml
         
     - name: "7.2.9 | Ensure local interactive user home directories are configured"
       ansible.builtin.include_tasks:
