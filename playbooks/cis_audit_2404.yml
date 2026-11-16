@@ -28,6 +28,10 @@
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/1.1.1.1_Ensure_cramfs_kernel_module_is_not_available.yml
 
+    - name: "7.1.12 | Ensure no files or directories without an owner and a group exist"
+      ansible.builtin.include_tasks:
+        file: ../controls/ubuntu2404/7.1.12_Ensure_no_unowned_or_ungrouped_files_exist.yml
+
     - name: "7.2.1 | Ensure accounts in /etc/passwd use shadowed passwords"
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/7.2.1_Ensure_accounts_in_passwd_use_shadowed_passwords.yml
