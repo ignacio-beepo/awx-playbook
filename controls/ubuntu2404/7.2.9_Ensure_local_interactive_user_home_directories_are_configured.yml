@@ -1,0 +1,136 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit local interactive user home directories
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6}' /etc/passwd | \
+    while IFS=: read user home; do
+
+      # Home directory must exist
+      if [ ! -d "$home" ]; then
+        echo "MISSING_HOME:$user:$home"
+        continue
+      fi
+
+      owner=$(stat -Lc '%U' "$home")
+      mode=$(stat -Lc '%a' "$home")
+
+      # Owner must be the user
+      [ "$owner" = "$user" ] || \
+        echo "BAD_OWNER:$user:$home:$owner"
+
+      # Mode must be 750 or more restrictive
+      if [ "$mode" -gt 750 ]; then
+        echo "BAD_MODE:$user:$home:$mode"
+      fi
+
+    done
+  register: home_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    homes_compliant: "{{ home_audit.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Interactive user home directories comply with CIS 7.2.9'
+        if homes_compliant
+        else
+        'FAIL - Interactive user home directories are non-compliant. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Fix home directory ownership and permissions
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6}' /etc/passwd | \
+    while IFS=: read user home; do
+
+      # Skip missing home dirs (manual investigation required)
+      [ -d "$home" ] || continue
+
+      chown "$user":"$user" "$home"
+
+      chmod 750 "$home"
+
+    done
+  when: not homes_compliant
+
+- name: Report missing home directories
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6}' /etc/passwd | \
+    while IFS=: read user home; do
+      [ -d "$home" ] || echo "$user:$home"
+    done
+  register: missing_homes
+  changed_when: false
+  failed_when: false
+  when: not homes_compliant
+
+- name: Display missing home directories
+  debug:
+    msg: |
+      Manual investigation required for missing home directories:
+      {{ missing_homes.stdout | default('None') }}
+  when:
+    - not homes_compliant
+    - missing_homes.stdout != ""
+
+##############################################################################
+# RECHECK AFTER REMEDIATION
+##############################################################################
+
+- name: Re-audit local interactive user home directories
+  shell: |
+    awk -F: '($3 >= 1000 && $7 !~ /(nologin|false)$/) {print $1 ":" $6}' /etc/passwd | \
+    while IFS=: read user home; do
+
+      if [ ! -d "$home" ]; then
+        echo "MISSING_HOME:$user:$home"
+        continue
+      fi
+
+      owner=$(stat -Lc '%U' "$home")
+      mode=$(stat -Lc '%a' "$home")
+
+      [ "$owner" = "$user" ] || \
+        echo "BAD_OWNER:$user:$home:$owner"
+
+      [ "$mode" -le 750 ] || \
+        echo "BAD_MODE:$user:$home:$mode"
+
+    done
+  register: home_audit_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - home_audit_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.9 compliant
+
+      Validation Result:
+      - All interactive user home directories exist
+      - Home directory ownership verified
+      - Home directory permissions are 750 or more restrictive
+
+    fail_msg: |
+      FAIL - CIS 7.2.9 non-compliant
+
+      Remaining Findings:
+      {{ home_audit_verify.stdout | default('Unknown') }}
