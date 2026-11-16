@@ -1,0 +1,93 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit duplicate user names
+  shell: |
+    awk -F: '{print $1}' /etc/passwd | sort | uniq -c | awk '$1 > 1 {print $2}'
+  register: duplicate_user_names
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    duplicate_user_names_compliant: "{{ duplicate_user_names.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - No duplicate user names exist'
+        if duplicate_user_names_compliant
+        else
+        'FAIL - Duplicate user names detected. Manual remediation required.'
+      }}
+
+##############################################################################
+# COLLECT DETAILS
+##############################################################################
+
+- name: Collect duplicate user details
+  shell: |
+    for usr in $(awk -F: '{print $1}' /etc/passwd | sort | uniq -d); do
+      echo "===== USER: ${usr} ====="
+      grep "^${usr}:" /etc/passwd
+      echo
+    done
+  register: duplicate_user_details
+  changed_when: false
+  failed_when: false
+  when: not duplicate_user_names_compliant
+
+- name: Display duplicate user details
+  debug:
+    msg: |
+      Duplicate User Entries Found:
+
+      {{ duplicate_user_details.stdout }}
+
+      Recommended Remediation:
+      1. Review the duplicate user entries above
+      2. Determine which account should remain unchanged
+      3. Rename or remove duplicate user account(s)
+      4. Verify file ownerships after modification
+      5. Re-run the CIS audit
+
+      Example:
+      usermod -l <new_username> <existing_username>
+
+  when: not duplicate_user_names_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit duplicate user names
+  shell: |
+    awk -F: '{print $1}' /etc/passwd | sort | uniq -d
+  register: duplicate_user_names_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - duplicate_user_names_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.7 compliant
+
+      Validation Result:
+      - No duplicate user names found
+
+    fail_msg: |
+      FAIL - CIS 7.2.7 non-compliant
+
+      Duplicate User Entries:
+
+      {{ duplicate_user_details.stdout | default(duplicate_user_names_verify.stdout) }}
