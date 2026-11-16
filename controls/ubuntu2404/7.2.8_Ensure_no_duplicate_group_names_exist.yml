@@ -5,7 +5,7 @@
 
 - name: Audit duplicate group names
   shell: |
-    cut -d: -f1 /etc/group | sort | uniq -d
+    awk -F: '{print $1}' /etc/group | sort | uniq -c | awk '$1 > 1 {print $2}'
   register: duplicate_group_names
   changed_when: false
   failed_when: false
@@ -25,20 +25,37 @@
       }}
 
 ##############################################################################
-# REMEDIATION
+# COLLECT DETAILS
 ##############################################################################
 
-- name: Display duplicate group names
+- name: Collect duplicate group details
+  shell: |
+    for grp in $(awk -F: '{print $1}' /etc/group | sort | uniq -d); do
+      echo "===== GROUP: ${grp} ====="
+      grep "^${grp}:" /etc/group
+      echo
+    done
+  register: duplicate_group_details
+  changed_when: false
+  failed_when: false
+  when: not duplicate_group_names_compliant
+
+- name: Display duplicate group details
   debug:
     msg: |
-      Duplicate group names found:
+      Duplicate Group Entries Found:
 
-      {{ duplicate_group_names.stdout }}
+      {{ duplicate_group_details.stdout }}
 
-      CIS Recommendation:
-      - Assign unique names to duplicate groups.
-      - Update /etc/group appropriately.
-      - Verify applications and memberships after modification.
+      Recommended Remediation:
+      1. Review duplicate group entries above
+      2. Determine which entry should remain
+      3. Rename or remove duplicate group(s)
+      4. Re-run the CIS audit
+
+      Example:
+      groupmod -n <new_group_name> <old_group_name>
+
   when: not duplicate_group_names_compliant
 
 ##############################################################################
@@ -47,7 +64,7 @@
 
 - name: Re-audit duplicate group names
   shell: |
-    cut -d: -f1 /etc/group | sort | uniq -d
+    awk -F: '{print $1}' /etc/group | sort | uniq -d
   register: duplicate_group_names_verify
   changed_when: false
   failed_when: false
@@ -70,5 +87,6 @@
     fail_msg: |
       FAIL - CIS 7.2.8 non-compliant
 
-      Duplicate Group Names:
-      {{ duplicate_group_names_verify.stdout | default('Unknown') }}
+      Duplicate Group Entries:
+
+      {{ duplicate_group_details.stdout | default(duplicate_group_names_verify.stdout) }}
