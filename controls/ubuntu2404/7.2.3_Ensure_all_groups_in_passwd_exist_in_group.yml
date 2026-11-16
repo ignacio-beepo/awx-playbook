@@ -1,0 +1,159 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit missing groups referenced by passwd
+  shell: |
+    awk -F: '
+    {
+      gids[$4]=1
+    }
+    END {
+      for (gid in gids)
+        print gid
+    }' /etc/passwd | while read gid; do
+
+      getent group "$gid" >/dev/null || \
+        echo "MISSING_GID:$gid"
+
+    done
+  register: missing_groups
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    passwd_group_compliant: "{{ missing_groups.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - All GIDs in /etc/passwd exist in /etc/group'
+        if passwd_group_compliant
+        else
+        'FAIL - Missing groups detected. Starting remediation...'
+      }}
+
+##############################################################################
+# COLLECT DETAILS
+##############################################################################
+
+- name: Collect missing group details
+  shell: |
+    awk -F: '
+    {
+      gids[$4]=1
+    }
+    END {
+      for (gid in gids)
+        print gid
+    }' /etc/passwd | while read gid; do
+
+      if ! getent group "$gid" >/dev/null; then
+        echo "===== MISSING GID: $gid ====="
+
+        awk -F: -v g="$gid" '
+        $4==g {
+          print $1 ":" $4 ":" $6
+        }' /etc/passwd
+
+        echo
+      fi
+
+    done
+  register: missing_group_details
+  changed_when: false
+  failed_when: false
+  when: not passwd_group_compliant
+
+- name: Display missing group details
+  debug:
+    msg: |
+      Missing Groups Detected:
+
+      {{ missing_group_details.stdout }}
+
+  when: not passwd_group_compliant
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create missing groups
+  shell: |
+    awk -F: '
+    {
+      gids[$4]=1
+    }
+    END {
+      for (gid in gids)
+        print gid
+    }' /etc/passwd | while read gid; do
+
+      if ! getent group "$gid" >/dev/null; then
+        group_name="gid_${gid}"
+
+        groupadd -g "$gid" "$group_name" 2>/dev/null || true
+
+        echo "Created group $group_name with GID $gid"
+      fi
+
+    done
+  register: remediation_result
+  failed_when: false
+  changed_when: true
+  when: not passwd_group_compliant
+
+- name: Show remediation result
+  debug:
+    msg: "{{ remediation_result.stdout }}"
+  when:
+    - not passwd_group_compliant
+    - remediation_result is defined
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit missing groups
+  shell: |
+    awk -F: '
+    {
+      gids[$4]=1
+    }
+    END {
+      for (gid in gids)
+        print gid
+    }' /etc/passwd | while read gid; do
+
+      getent group "$gid" >/dev/null || \
+        echo "MISSING_GID:$gid"
+
+    done
+  register: missing_groups_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - missing_groups_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.3 compliant
+
+      Validation Result:
+      - All GIDs referenced in /etc/passwd exist in /etc/group
+
+    fail_msg: |
+      FAIL - CIS 7.2.3 non-compliant
+
+      Missing Groups:
+
+      {{ missing_groups_verify.stdout | default('Unknown') }}
