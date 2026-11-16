@@ -10,19 +10,9 @@
   changed_when: false
   failed_when: false
 
-- name: DEBUG - Raw audit output
-  debug:
-    var: orphaned_files.stdout_lines
-
 - name: Determine compliance status
   set_fact:
     orphaned_files_compliant: "{{ orphaned_files.stdout_lines | length == 0 }}"
-
-- name: DEBUG - Compliance status
-  debug:
-    msg:
-      - "orphaned_files_compliant={{ orphaned_files_compliant }}"
-      - "findings={{ orphaned_files.stdout_lines | length }}"
 
 - name: Show audit result
   debug:
@@ -38,29 +28,15 @@
 # REMEDIATION
 ##############################################################################
 
-- name: DEBUG - File(s) to remediate
-  debug:
-    msg: "{{ item }}"
-  loop: "{{ orphaned_files.stdout_lines }}"
-  when:
-    - not orphaned_files_compliant
-    - orphaned_files.stdout_lines | length > 0
-
 - name: Fix ownership of orphaned files and directories
   ansible.builtin.file:
     path: "{{ item }}"
     owner: root
     group: root
   loop: "{{ orphaned_files.stdout_lines }}"
-  register: remediation_output
   when:
     - not orphaned_files_compliant
     - orphaned_files.stdout_lines | length > 0
-
-- name: DEBUG - Remediation results
-  debug:
-    var: remediation_output
-  when: remediation_output is defined
 
 ##############################################################################
 # RECHECK
@@ -73,12 +49,8 @@
   changed_when: false
   failed_when: false
 
-- name: DEBUG - Recheck output
-  debug:
-    var: orphaned_files_verify.stdout_lines
-
 ##############################################################################
-# FINAL VALIDATION
+# FINAL CIS VALIDATION
 ##############################################################################
 
 - name: Final CIS Validation
@@ -99,4 +71,4 @@
 
       Remaining Findings:
 
-      {{ orphaned_files_verify.stdout }}
+      {{ orphaned_files_verify.stdout | default('Unknown') }}
