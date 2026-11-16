@@ -5,13 +5,17 @@
 
 - name: Audit unowned or ungrouped files and directories
   shell: |
-    find / \
-      -xdev \
-      \( -nouser -o -nogroup \) \
-      -print 2>/dev/null
+    find / -xdev \( -nouser -o -nogroup \) -print 2>/dev/null
   register: orphaned_files
   changed_when: false
   failed_when: false
+
+- name: Show audit findings
+  debug:
+    msg: |
+      Findings:
+
+      {{ orphaned_files.stdout | default('None') }}
 
 - name: Determine compliance status
   set_fact:
@@ -28,24 +32,11 @@
       }}
 
 ##############################################################################
-# DISPLAY FINDINGS
-##############################################################################
-
-- name: Display orphaned files and directories
-  debug:
-    msg: |
-      Unowned/Ungrouped Objects Found:
-
-      {{ orphaned_files.stdout }}
-
-  when: not orphaned_files_compliant
-
-##############################################################################
 # REMEDIATION
 ##############################################################################
 
 - name: Fix ownership of orphaned files and directories
-  file:
+  ansible.builtin.file:
     path: "{{ item }}"
     owner: root
     group: root
@@ -54,34 +45,26 @@
     - not orphaned_files_compliant
     - orphaned_files.stdout_lines | length > 0
 
-- name: Show remediation result
-  debug:
-    msg: |
-      Remediation completed.
-
-      Ownership assigned:
-      root:root
-
-  when:
-    - not orphaned_files_compliant
-    - remediation_result is defined
-
 ##############################################################################
 # RECHECK
 ##############################################################################
 
 - name: Re-audit unowned or ungrouped files and directories
   shell: |
-    find / \
-      -xdev \
-      \( -nouser -o -nogroup \) \
-      -print 2>/dev/null
+    find / -xdev \( -nouser -o -nogroup \) -print 2>/dev/null
   register: orphaned_files_verify
   changed_when: false
   failed_when: false
 
+- name: Show recheck findings
+  debug:
+    msg: |
+      Remaining Findings:
+
+      {{ orphaned_files_verify.stdout | default('None') }}
+
 ##############################################################################
-# FINAL CIS VALIDATION
+# FINAL VALIDATION
 ##############################################################################
 
 - name: Final CIS Validation
@@ -95,11 +78,11 @@
       Validation Result:
       - No unowned files found
       - No ungrouped files found
-      - Orphaned objects remediated
+      - All orphaned objects remediated
 
     fail_msg: |
       FAIL - CIS 7.1.12 non-compliant
 
       Remaining Findings:
 
-      {{ orphaned_files_verify.stdout | default('Unknown') }}
+      {{ orphaned_files_verify.stdout }}
