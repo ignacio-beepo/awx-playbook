@@ -1,0 +1,115 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit shadow group membership
+  shell: |
+    awk -F: '/^shadow:/ {print $4}' /etc/group
+  register: shadow_members
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    shadow_group_compliant: "{{ shadow_members.stdout | trim == '' }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Shadow group is empty'
+        if shadow_group_compliant
+        else
+        'FAIL - Shadow group contains members. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remove all users from shadow group
+  shell: |
+    sed -ri 's/(^shadow:[^:]*:[^:]*:)([^:]+$)/\1/' /etc/group
+  when: not shadow_group_compliant
+
+- name: Check for users with shadow as primary group
+  shell: |
+    shadow_gid=$(getent group shadow | cut -d: -f3)
+
+    awk -F: -v sgid="$shadow_gid" '
+      $4 == sgid {
+        print $1 ":" $4
+      }
+    ' /etc/passwd
+  register: shadow_primary_users
+  changed_when: false
+  failed_when: false
+  when: not shadow_group_compliant
+
+- name: Display users with shadow as primary group
+  debug:
+    msg: |
+      WARNING
+
+      The following users have shadow as their PRIMARY group
+      and require manual remediation:
+
+      {{ shadow_primary_users.stdout | default('None') }}
+
+      Example remediation:
+      usermod -g <new_primary_group> <username>
+
+  when:
+    - not shadow_group_compliant
+    - shadow_primary_users.stdout != ""
+
+##############################################################################
+# RECHECK AFTER REMEDIATION
+##############################################################################
+
+- name: Re-audit shadow group membership
+  shell: |
+    awk -F: '/^shadow:/ {print $4}' /etc/group
+  register: shadow_members_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck users with shadow as primary group
+  shell: |
+    shadow_gid=$(getent group shadow | cut -d: -f3)
+
+    awk -F: -v sgid="$shadow_gid" '
+      $4 == sgid {
+        print $1 ":" $4
+      }
+    ' /etc/passwd
+  register: shadow_primary_users_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - shadow_members_verify.stdout | trim == ''
+      - shadow_primary_users_verify.stdout | trim == ''
+
+    success_msg: |
+      PASS - CIS 7.2.4 compliant
+
+      Validation Result:
+      - Shadow group contains no members
+      - No users have shadow as primary group
+
+    fail_msg: |
+      FAIL - CIS 7.2.4 non-compliant
+
+      Shadow Group Members:
+      {{ shadow_members_verify.stdout | default('None') }}
+
+      Users with Shadow as Primary Group:
+      {{ shadow_primary_users_verify.stdout | default('None') }}
