@@ -1,0 +1,74 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit duplicate group names
+  shell: |
+    cut -d: -f1 /etc/group | sort | uniq -d
+  register: duplicate_group_names
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    duplicate_group_names_compliant: "{{ duplicate_group_names.stdout_lines | length == 0 }}"
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - No duplicate group names exist'
+        if duplicate_group_names_compliant
+        else
+        'FAIL - Duplicate group names detected. Manual remediation required.'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Display duplicate group names
+  debug:
+    msg: |
+      Duplicate group names found:
+
+      {{ duplicate_group_names.stdout }}
+
+      CIS Recommendation:
+      - Assign unique names to duplicate groups.
+      - Update /etc/group appropriately.
+      - Verify applications and memberships after modification.
+  when: not duplicate_group_names_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit duplicate group names
+  shell: |
+    cut -d: -f1 /etc/group | sort | uniq -d
+  register: duplicate_group_names_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - duplicate_group_names_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 7.2.8 compliant
+
+      Validation Result:
+      - No duplicate group names found
+
+    fail_msg: |
+      FAIL - CIS 7.2.8 non-compliant
+
+      Duplicate Group Names:
+      {{ duplicate_group_names_verify.stdout | default('Unknown') }}
