@@ -83,8 +83,7 @@
         if [[ "$base" == ".bash_history" ]]; then
           chmod 600 "$file"
         else
-          chmod go-w "$file"
-          chmod u-x "$file"
+          chmod 644 "$file"
         fi
 
       done
