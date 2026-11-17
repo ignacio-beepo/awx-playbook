@@ -1,0 +1,97 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/passwd- exists
+  stat:
+    path: /etc/passwd-
+  register: passwd_backup_file
+
+- name: Audit /etc/passwd- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g' /etc/passwd-
+  register: passwd_backup_audit
+  changed_when: false
+  failed_when: false
+  when: passwd_backup_file.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    passwd_backup_compliant: >-
+      {{
+        passwd_backup_file.stat.exists
+        and
+        (
+          (passwd_backup_audit.stdout.split('|')[0] | int <= 644)
+          and
+          (passwd_backup_audit.stdout.split('|')[1] == '0')
+          and
+          (passwd_backup_audit.stdout.split('|')[2] == '0')
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/passwd- access is correctly configured'
+        if passwd_backup_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure ownership and permissions on /etc/passwd-
+  file:
+    path: /etc/passwd-
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - passwd_backup_file.stat.exists
+    - not passwd_backup_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/passwd- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g' /etc/passwd-
+  register: passwd_backup_verify
+  changed_when: false
+  failed_when: false
+  when: passwd_backup_file.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - passwd_backup_file.stat.exists
+      - "(passwd_backup_verify.stdout.split('|')[0] | int) <= 644"
+      - "passwd_backup_verify.stdout.split('|')[1] == '0'"
+      - "passwd_backup_verify.stdout.split('|')[2] == '0'"
+
+    success_msg: |
+      PASS - CIS 7.1.2 compliant
+
+      Validation Result:
+      - /etc/passwd- permissions are 0644 or more restrictive
+      - Owner is root
+      - Group is root
+
+      Current Configuration:
+      {{ passwd_backup_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.2 non-compliant
+
+      Current Configuration:
+      {{ passwd_backup_verify.stdout | default('/etc/passwd- missing') }}
