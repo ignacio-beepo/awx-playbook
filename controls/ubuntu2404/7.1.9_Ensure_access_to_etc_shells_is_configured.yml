@@ -1,0 +1,83 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Audit /etc/shells permissions and ownership
+  shell: |
+    stat -Lc '%n|%a|%u|%g' /etc/shells
+  register: shells_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    shells_compliant: >-
+      {{
+        (shells_audit.stdout.split('|')[1] | int <= 644)
+        and
+        (shells_audit.stdout.split('|')[2] == '0')
+        and
+        (shells_audit.stdout.split('|')[3] == '0')
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/shells permissions are correctly configured'
+        if shells_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure /etc/shells ownership and permissions
+  file:
+    path: /etc/shells
+    owner: root
+    group: root
+    mode: "0644"
+  when: not shells_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/shells permissions and ownership
+  shell: |
+    stat -Lc '%n|%a|%u|%g' /etc/shells
+  register: shells_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "(shells_verify.stdout.split('|')[1] | int) <= 644"
+      - "shells_verify.stdout.split('|')[2] == '0'"
+      - "shells_verify.stdout.split('|')[3] == '0'"
+
+    success_msg: |
+      PASS - CIS 7.1.9 compliant
+
+      Validation Result:
+      - /etc/shells permissions are 0644 or more restrictive
+      - Owner is root
+      - Group is root
+
+      Current Configuration:
+      {{ shells_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.9 non-compliant
+
+      Current Configuration:
+      {{ shells_verify.stdout }}
