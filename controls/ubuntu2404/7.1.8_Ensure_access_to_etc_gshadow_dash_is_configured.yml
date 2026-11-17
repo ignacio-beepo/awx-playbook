@@ -1,0 +1,115 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/gshadow- exists
+  stat:
+    path: /etc/gshadow-
+  register: gshadow_backup_file
+
+- name: Audit /etc/gshadow- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/gshadow-
+  register: gshadow_backup_audit
+  changed_when: false
+  failed_when: false
+  when: gshadow_backup_file.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    gshadow_backup_compliant: >-
+      {{
+        (
+          not gshadow_backup_file.stat.exists
+        )
+        or
+        (
+          (gshadow_backup_audit.stdout.split('|')[0] | int <= 640)
+          and
+          (gshadow_backup_audit.stdout.split('|')[1] == '0')
+          and
+          (
+            gshadow_backup_audit.stdout.split('|')[2] == '0'
+            or
+            gshadow_backup_audit.stdout.split('|')[3] == 'shadow'
+          )
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/gshadow- access is correctly configured'
+        if gshadow_backup_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Set ownership and permissions on /etc/gshadow-
+  file:
+    path: /etc/gshadow-
+    owner: root
+    group: shadow
+    mode: "0640"
+  when:
+    - gshadow_backup_file.stat.exists
+    - not gshadow_backup_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/gshadow- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/gshadow-
+  register: gshadow_backup_verify
+  changed_when: false
+  failed_when: false
+  when: gshadow_backup_file.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - >
+        (
+          not gshadow_backup_file.stat.exists
+        )
+        or
+        (
+          (gshadow_backup_verify.stdout.split('|')[0] | int <= 640)
+          and
+          (gshadow_backup_verify.stdout.split('|')[1] == '0')
+          and
+          (
+            gshadow_backup_verify.stdout.split('|')[2] == '0'
+            or
+            gshadow_backup_verify.stdout.split('|')[3] == 'shadow'
+          )
+        )
+
+    success_msg: |
+      PASS - CIS 7.1.8 compliant
+
+      Validation Result:
+      - /etc/gshadow- permissions are 0640 or more restrictive
+      - Owner is root
+      - Group is root or shadow
+
+      Current Configuration:
+      {{ gshadow_backup_verify.stdout | default('File does not exist (PASS)') }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.8 non-compliant
+
+      Current Configuration:
+      {{ gshadow_backup_verify.stdout | default('Unknown') }}
