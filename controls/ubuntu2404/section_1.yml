@@ -5,6 +5,13 @@
 # ============================================================
 
 - import_tasks: 1_initial_setup/1.1_filesystem/1.1.1_configure_filesystem_kernel_modules/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.1.1 - Configure Filesystem Kernel Modules
+# ============================================================
+
+- import_tasks: 1_initial_setup/1.1_filesystem/1.1.2_configure_filesystem_permissions/main.yml
 # ============================================================
 # OLD Configuration
 # ============================================================

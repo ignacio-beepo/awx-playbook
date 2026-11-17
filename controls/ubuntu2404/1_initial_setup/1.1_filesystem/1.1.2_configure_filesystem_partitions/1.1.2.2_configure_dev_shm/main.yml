@@ -1,0 +1,5 @@
+---
+- include_tasks: 1.1.2.2.1_ensure_dev_shm_is_tmpfs_or_a_separate_partition.yml
+- include_tasks: 1.1.2.2.2_ensure_nodev_option_set_on_dev_shm_partition.yml
+- include_tasks: 1.1.2.2.3_ensure_nosuid_option_set_on_dev_shm_partition.yml
+- include_tasks: 1.1.2.2.4_ensure_noexec_option_set_on_dev_shm_partition.yml

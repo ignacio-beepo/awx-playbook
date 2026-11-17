@@ -1,0 +1,5 @@
+---
+- include_tasks: 1.1.2.5.1_ensure_separate_partition_exists_for_var_tmp.yml
+- include_tasks: 1.1.2.5.2_ensure_nodev_option_set_on_var_tmp_partition.yml
+- include_tasks: 1.1.2.5.3_ensure_nosuid_option_set_on_var_tmp_partition.yml
+- include_tasks: 1.1.2.5.4_ensure_noexec_option_set_on_var_tmp_partition.yml

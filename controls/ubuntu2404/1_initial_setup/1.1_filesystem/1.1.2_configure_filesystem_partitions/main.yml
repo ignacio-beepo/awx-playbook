@@ -1,0 +1,8 @@
+---
+- import_tasks: 1.1.2.1_configure_tmp/main.yml
+- import_tasks: 1.1.2.2_configure_dev_shm/main.yml
+- import_tasks: 1.1.2.3_configure_home/main.yml
+- import_tasks: 1.1.2.4_configure_var/main.yml
+- import_tasks: 1.1.2.5_configure_var_tmp/main.yml
+- import_tasks: 1.1.2.6_configure_var_log/main.yml
+- import_tasks: 1.1.2.7_configure_var_log_audit/main.yml

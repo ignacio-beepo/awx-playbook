@@ -1,0 +1,4 @@
+---
+- include_tasks: 1.1.2.3.1_ensure_separate_partition_exists_for_home.yml
+- include_tasks: 1.1.2.3.2_ensure_nodev_option_set_on_home_partition.yml
+- include_tasks: 1.1.2.3.3_ensure_nosuid_option_set_on_home_partition.yml

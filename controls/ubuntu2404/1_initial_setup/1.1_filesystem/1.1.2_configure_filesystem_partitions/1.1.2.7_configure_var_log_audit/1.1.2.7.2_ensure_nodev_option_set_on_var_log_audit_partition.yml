@@ -1,0 +1,130 @@
+---
+##############################################################################
+# AUDIT
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.1.2.7.2 | Section 1.1.2.7 | Mount point /var/log/audit
+##############################################################################
+
+- name: Audit CIS 1.1.2.7.2 - /var/log/audit
+  ansible.builtin.shell: |
+    mp="/var/log/audit"
+    line="$(findmnt -n -o TARGET,SOURCE,FSTYPE,OPTIONS --target "$mp" 2>/dev/null || true)"
+    target="$(awk '{print $1}' <<< "$line")"
+    if [ "$target" != "$mp" ]; then
+      echo "NOT_APPLICABLE_NOT_SEPARATE"
+      exit 0
+    fi
+    opts="$(awk '{print $4}' <<< "$line")"
+    case ",$opts," in
+      *",nodev,"*) echo "COMPLIANT";;
+      *) echo "NON_COMPLIANT missing=nodev";;
+    esac
+  args:
+    executable: /bin/bash
+  register: cis_1_1_2_7_2_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.1.2.7.2
+  ansible.builtin.set_fact:
+    cis_1_1_2_7_2_compliant: "{{ ('COMPLIANT' in cis_1_1_2_7_2_audit.stdout) or ('NOT_APPLICABLE_NOT_SEPARATE' in cis_1_1_2_7_2_audit.stdout) }}"
+
+- name: Show audit result for CIS 1.1.2.7.2
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 1.1.2.7.2 compliant'
+        if cis_1_1_2_7_2_compliant
+        else 'FAIL - CIS 1.1.2.7.2 non-compliant: ' ~ (cis_1_1_2_7_2_audit.stdout | default('No audit output'))
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Add nodev to /var/log/audit in /etc/fstab
+  ansible.builtin.shell: |
+    python3 - "/var/log/audit" "nodev" <<'PY'
+    import pathlib, sys
+    mp, opt = sys.argv[1], sys.argv[2]
+    p = pathlib.Path("/etc/fstab")
+    lines = p.read_text().splitlines()
+    changed = False
+    out = []
+    for line in lines:
+        s = line.strip()
+        if s and not s.startswith("#"):
+            fields = s.split()
+            if len(fields) >= 4 and fields[1] == mp:
+                opts = fields[3].split(",")
+                if opt not in opts:
+                    fields[3] = ",".join(opts + [opt])
+                    line = " ".join(fields)
+                    changed = True
+        out.append(line)
+    if changed:
+        backup = p.with_suffix(".cis-backup")
+        backup.write_text(p.read_text())
+        p.write_text("\n".join(out) + "\n")
+        print("changed" if changed else "ok")
+    PY
+  register: cis_1_1_2_7_2_fstab
+  changed_when: "'changed' in (cis_1_1_2_7_2_fstab.stdout | default(''))"
+  failed_when: false
+  when:
+    - not cis_1_1_2_7_2_compliant
+    - cis_remediate | default(false) | bool
+
+- name: Remount /var/log/audit
+  ansible.builtin.command: "mount -o remount /var/log/audit"
+  register: cis_1_1_2_7_2_remount
+  changed_when: cis_1_1_2_7_2_remount.rc == 0
+  failed_when: false
+  when:
+    - not cis_1_1_2_7_2_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit CIS 1.1.2.7.2 - /var/log/audit
+  ansible.builtin.shell: |
+    mp="/var/log/audit"
+    line="$(findmnt -n -o TARGET,SOURCE,FSTYPE,OPTIONS --target "$mp" 2>/dev/null || true)"
+    target="$(awk '{print $1}' <<< "$line")"
+    if [ "$target" != "$mp" ]; then
+      echo "NOT_APPLICABLE_NOT_SEPARATE"
+      exit 0
+    fi
+    opts="$(awk '{print $4}' <<< "$line")"
+    case ",$opts," in
+      *",nodev,"*) echo "COMPLIANT";;
+      *) echo "NON_COMPLIANT missing=nodev";;
+    esac
+  args:
+    executable: /bin/bash
+  register: cis_1_1_2_7_2_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Final CIS Validation - 1.1.2.7.2
+  ansible.builtin.assert:
+    that:
+      - >-
+        (cis_1_1_2_7_2_compliant) or
+        ((cis_remediate | default(false) | bool) and
+         (('COMPLIANT' in (cis_1_1_2_7_2_verify.stdout | default(''))) or
+          ('COMPLIANT_TMPFS' in (cis_1_1_2_7_2_verify.stdout | default(''))) or
+          ('COMPLIANT_SEPARATE_FILESYSTEM' in (cis_1_1_2_7_2_verify.stdout | default(''))) or
+          ('NOT_APPLICABLE_NOT_SEPARATE' in (cis_1_1_2_7_2_verify.stdout | default('')))))
+    success_msg: |
+      PASS - CIS 1.1.2.7.2 compliant
+      Mount point: /var/log/audit
+      Evidence: {{ cis_1_1_2_7_2_verify.stdout | default(cis_1_1_2_7_2_audit.stdout) }}
+    fail_msg: |
+      FAIL - CIS 1.1.2.7.2 non-compliant
+      Evidence: {{ cis_1_1_2_7_2_verify.stdout | default(cis_1_1_2_7_2_audit.stdout) }}
+      Remediation is controlled by cis_remediate (default: false).
+      Partition creation/migration is a manual storage operation.

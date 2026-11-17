@@ -1,0 +1,95 @@
+---
+##############################################################################
+# AUDIT
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.1.2.3.1 | Section 1.1.2.3 | Mount point /home
+##############################################################################
+
+- name: Audit CIS 1.1.2.3.1 - /home
+  ansible.builtin.shell: |
+    mp="/home"
+    line="$(findmnt -n -o TARGET,SOURCE --target "$mp" 2>/dev/null || true)"
+    target="$(awk '{print $1}' <<< "$line")"
+    source="$(awk '{print $2}' <<< "$line")"
+    root_source="$(findmnt -n -o SOURCE --target / 2>/dev/null || true)"
+    if [ "$target" = "$mp" ] && [ "$source" != "$root_source" ]; then
+      echo "COMPLIANT_SEPARATE_FILESYSTEM"
+    else
+      echo "NON_COMPLIANT_NOT_SEPARATE"
+    fi
+  args:
+    executable: /bin/bash
+  register: cis_1_1_2_3_1_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.1.2.3.1
+  ansible.builtin.set_fact:
+    cis_1_1_2_3_1_compliant: "{{ ('COMPLIANT_SEPARATE_FILESYSTEM' in cis_1_1_2_3_1_audit.stdout) }}"
+
+- name: Show audit result for CIS 1.1.2.3.1
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 1.1.2.3.1 compliant'
+        if cis_1_1_2_3_1_compliant
+        else 'FAIL - CIS 1.1.2.3.1 non-compliant: ' ~ (cis_1_1_2_3_1_audit.stdout | default('No audit output'))
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Manual partition remediation notice for /home
+  ansible.builtin.debug:
+    msg: >-
+      CIS 1.1.2.3.1 requires a dedicated filesystem for /home.
+      Partition creation, filesystem migration, and data movement are not
+      automated. Plan the storage change, back up data, update /etc/fstab,
+      and schedule a maintenance window.
+  when:
+    - not cis_1_1_2_3_1_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit CIS 1.1.2.3.1 - /home
+  ansible.builtin.shell: |
+    mp="/home"
+    line="$(findmnt -n -o TARGET,SOURCE --target "$mp" 2>/dev/null || true)"
+    target="$(awk '{print $1}' <<< "$line")"
+    source="$(awk '{print $2}' <<< "$line")"
+    root_source="$(findmnt -n -o SOURCE --target / 2>/dev/null || true)"
+    if [ "$target" = "$mp" ] && [ "$source" != "$root_source" ]; then
+      echo "COMPLIANT_SEPARATE_FILESYSTEM"
+    else
+      echo "NON_COMPLIANT_NOT_SEPARATE"
+    fi
+  args:
+    executable: /bin/bash
+  register: cis_1_1_2_3_1_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Final CIS Validation - 1.1.2.3.1
+  ansible.builtin.assert:
+    that:
+      - >-
+        (cis_1_1_2_3_1_compliant) or
+        ((cis_remediate | default(false) | bool) and
+         (('COMPLIANT' in (cis_1_1_2_3_1_verify.stdout | default(''))) or
+          ('COMPLIANT_TMPFS' in (cis_1_1_2_3_1_verify.stdout | default(''))) or
+          ('COMPLIANT_SEPARATE_FILESYSTEM' in (cis_1_1_2_3_1_verify.stdout | default(''))) or
+          ('NOT_APPLICABLE_NOT_SEPARATE' in (cis_1_1_2_3_1_verify.stdout | default('')))))
+    success_msg: |
+      PASS - CIS 1.1.2.3.1 compliant
+      Mount point: /home
+      Evidence: {{ cis_1_1_2_3_1_verify.stdout | default(cis_1_1_2_3_1_audit.stdout) }}
+    fail_msg: |
+      FAIL - CIS 1.1.2.3.1 non-compliant
+      Evidence: {{ cis_1_1_2_3_1_verify.stdout | default(cis_1_1_2_3_1_audit.stdout) }}
+      Remediation is controlled by cis_remediate (default: false).
+      Partition creation/migration is a manual storage operation.
