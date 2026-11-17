@@ -1,0 +1,8 @@
+---
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.1.1 - Configure Filesystem Kernel Modules
+# ============================================================
+
+- include_tasks: "{{ item }}"
+  loop: "{{ query('fileglob', role_path ~ '/tasks/*.yml') | sort }}"

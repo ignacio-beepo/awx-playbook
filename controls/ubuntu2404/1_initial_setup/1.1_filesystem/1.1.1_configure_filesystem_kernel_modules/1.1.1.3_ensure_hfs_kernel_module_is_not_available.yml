@@ -1,0 +1,158 @@
+---
+##############################################################################
+# AUDIT - 1.1.1.3: Ensure hfs kernel module is not available
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# Profile: Level 1 - Server; Level 1 - Workstation
+
+##############################################################################
+
+- name: Audit hfs kernel module availability
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="hfs"
+    module_type="fs"
+    module_dir_name="hfs"
+    config_name="hfs"
+
+    # If the module is not present as a loadable module, CIS considers this compliant.
+    module_found=0
+    for base in /usr/lib/modules /lib/modules; do
+      if [ -d "$base" ]; then
+        while IFS= read -r -d '' path; do
+          if [ -n "$(find "$path" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
+            module_found=1
+            break
+          fi
+        done < <(find "$base" -path "*/kernel/fs/hfs" -type d -print0 2>/dev/null)
+      fi
+      [ "$module_found" -eq 1 ] && break
+    done
+
+    if [ "$module_found" -eq 0 ]; then
+      echo "MODULE_NOT_AVAILABLE"
+      exit 0
+    fi
+
+    loaded=0
+    if lsmod | awk '{print $1}' | grep -Fxq "$module_name"; then
+      loaded=1
+    elif lsmod | awk '{print $1}' | grep -Fxq "$config_name"; then
+      loaded=1
+    fi
+
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: hfs_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for hfs
+  ansible.builtin.set_fact:
+    hfs_compliant: >-
+      {{ 'COMPLIANT' in hfs_audit.stdout or
+          'MODULE_NOT_AVAILABLE' in hfs_audit.stdout }}
+
+- name: Show audit result for hfs
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 1.1.1.3: hfs kernel module is not available or is disabled'
+        if hfs_compliant
+        else 'FAIL - CIS 1.1.1.3: hfs kernel module is available, loaded, or not correctly disabled'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Unload hfs kernel module
+  ansible.builtin.command: "modprobe -r hfs"
+  register: hfs_unload
+  changed_when: hfs_unload.rc == 0
+  failed_when: false
+  when:
+    - not hfs_compliant
+    - cis_remediate | default(false) | bool
+
+- name: Disable hfs kernel module
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/60-hfs.conf
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    line: "{{ item }}"
+    state: present
+  loop:
+    - "install hfs /bin/false"
+    - "blacklist hfs"
+  when:
+    - not hfs_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit hfs kernel module
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="hfs"
+    config_name="hfs"
+    loaded=0
+    lsmod | awk '{print $1}' | grep -Fxq "$module_name" && loaded=1
+    lsmod | awk '{print $1}' | grep -Fxq "$config_name" && loaded=1
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: hfs_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - cis_remediate | default(false) | bool
+    - not hfs_compliant
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation - 1.1.1.3
+  ansible.builtin.assert:
+    that:
+      - >-
+        (hfs_compliant) or
+        ((cis_remediate | default(false) | bool) and
+         ('COMPLIANT' in (hfs_verify.stdout | default(''))))
+    success_msg: |
+      PASS - CIS 1.1.1.3 compliant
+
+      Validation Result:
+      - hfs kernel module is not available, or
+      - Module is not loaded and has blacklist plus install /bin/false or /bin/true configuration.
+    fail_msg: |
+      FAIL - CIS 1.1.1.3 non-compliant
+
+      Audit details:
+      {{ hfs_audit.stdout | default('No audit output') }}
+
+      Remediation is controlled by cis_remediate (default: false).

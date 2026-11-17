@@ -4,47 +4,52 @@
 # Section 1.1.1 - Configure Filesystem Kernel Modules
 # ============================================================
 
-- name: Audit CIS Ubuntu 24.04 kernel module controls
-  ansible.builtin.include_tasks:
-    file: ../common/tasks/kernel_module.yml
-  loop:
-    - id: "1.1.1.1"
-      name: "cramfs"
-      title: "Ensure cramfs kernel module is not available"
+- import_tasks: 1_initial_setup/1.1_filesystem/1.1.1_configure_filesystem_kernel_modules/main.yml
+# ============================================================
+# OLD Configuration
+# ============================================================
 
-    - id: "1.1.1.2"
-      name: "freevxfs"
-      title: "Ensure freevxfs kernel module is not available"
+# - name: Audit CIS Ubuntu 24.04 kernel module controls
+#   ansible.builtin.include_tasks:
+#     file: ../common/tasks/kernel_module.yml
+#   loop:
+#     - id: "1.1.1.1"
+#       name: "cramfs"
+#       title: "Ensure cramfs kernel module is not available"
 
-    - id: "1.1.1.3"
-      name: "hfs"
-      title: "Ensure hfs kernel module is not available"
+#     - id: "1.1.1.2"
+#       name: "freevxfs"
+#       title: "Ensure freevxfs kernel module is not available"
 
-    - id: "1.1.1.4"
-      name: "hfsplus"
-      title: "Ensure hfsplus kernel module is not available"
+#     - id: "1.1.1.3"
+#       name: "hfs"
+#       title: "Ensure hfs kernel module is not available"
 
-    - id: "1.1.1.5"
-      name: "jffs2"
-      title: "Ensure jffs2 kernel module is not available"
+#     - id: "1.1.1.4"
+#       name: "hfsplus"
+#       title: "Ensure hfsplus kernel module is not available"
 
-    - id: "1.1.1.6"
-      name: "overlay"
-      title: "Ensure overlay kernel module is not available"
+#     - id: "1.1.1.5"
+#       name: "jffs2"
+#       title: "Ensure jffs2 kernel module is not available"
 
-    - id: "1.1.1.8"
-      name: "udf"
-      title: "Ensure udf kernel module is not available"
+#     - id: "1.1.1.6"
+#       name: "overlay"
+#       title: "Ensure overlay kernel module is not available"
 
-    - id: "1.1.1.9"
-      name: "usb-storage"
-      title: "Ensure usb-storage kernel module is not available"
+#     - id: "1.1.1.8"
+#       name: "udf"
+#       title: "Ensure udf kernel module is not available"
 
-  loop_control:
-    loop_var: cis_control
-    label: "{{ cis_control.id }} - {{ cis_control.name }}"
+#     - id: "1.1.1.9"
+#       name: "usb-storage"
+#       title: "Ensure usb-storage kernel module is not available"
 
-  vars:
-    cis_id: "{{ cis_control.id }}"
-    cis_module_name: "{{ cis_control.name }}"
-    cis_title: "{{ cis_control.title }}"
+#   loop_control:
+#     loop_var: cis_control
+#     label: "{{ cis_control.id }} - {{ cis_control.name }}"
+
+#   vars:
+#     cis_id: "{{ cis_control.id }}"
+#     cis_module_name: "{{ cis_control.name }}"
+#     cis_title: "{{ cis_control.title }}"

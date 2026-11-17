@@ -16,17 +16,17 @@
       ansible.builtin.set_fact:
         cis_results: []
 
-    # - name: Execute Section 1 Filesystem
-    #   ansible.builtin.include_tasks:
-    #     file: ../controls/ubuntu2404/section_1.yml
+    - name: Execute Section 1 Filesystem
+      ansible.builtin.include_tasks:
+        file: ../controls/ubuntu2404/section_1.yml
 
     # - name: Execute Section 5 audit controls
     #   ansible.builtin.include_tasks:
     #     file: ../controls/ubuntu2404/section_5.yml
 
-    - name: "1.1.1.1 | Ensure cramfs kernel module is not available"
-      ansible.builtin.include_tasks:
-        file: ../controls/ubuntu2404/1.1.1.1_Ensure_cramfs_kernel_module_is_not_available.yml
+    # - name: "1.1.1.1 | Ensure cramfs kernel module is not available"
+    #   ansible.builtin.include_tasks:
+    #     file: ../controls/ubuntu2404/1.1.1.1_Ensure_cramfs_kernel_module_is_not_available.yml
 
     - name: "7.1.3 | Ensure access to /etc/group is configured"
       ansible.builtin.include_tasks:
@@ -99,11 +99,11 @@
     - name: "7.2.8 | Ensure no duplicate group names exist"
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/7.2.8_Ensure_no_duplicate_group_names_exist.yml
-        
+
     - name: "7.2.9 | Ensure local interactive user home directories are configured"
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/7.2.9_Ensure_local_interactive_user_home_directories_are_configured.yml
-        
+
     - name: "7.2.10 | Ensure local interactive user dot files access is configured"
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/7.2.10_Ensure_local_interactive_user_dot_files_access_is_configured.yml

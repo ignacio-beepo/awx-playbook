@@ -1,0 +1,158 @@
+---
+##############################################################################
+# AUDIT - 1.1.1.10: Ensure usb-storage kernel module is not available
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# Profile: Level 1 - Server; Level 2 - Workstation
+# IMPACT: WARNING: Disabling usb-storage disables use of USB storage devices. Consider approved alternatives such as USBGuard where appropriate.
+##############################################################################
+
+- name: Audit usb-storage kernel module availability
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="usb-storage"
+    module_type="drivers"
+    module_dir_name="usb-storage"
+    config_name="usb_storage"
+
+    # If the module is not present as a loadable module, CIS considers this compliant.
+    module_found=0
+    for base in /usr/lib/modules /lib/modules; do
+      if [ -d "$base" ]; then
+        while IFS= read -r -d '' path; do
+          if [ -n "$(find "$path" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
+            module_found=1
+            break
+          fi
+        done < <(find "$base" -path "*/kernel/drivers/usb-storage" -type d -print0 2>/dev/null)
+      fi
+      [ "$module_found" -eq 1 ] && break
+    done
+
+    if [ "$module_found" -eq 0 ]; then
+      echo "MODULE_NOT_AVAILABLE"
+      exit 0
+    fi
+
+    loaded=0
+    if lsmod | awk '{print $1}' | grep -Fxq "$module_name"; then
+      loaded=1
+    elif lsmod | awk '{print $1}' | grep -Fxq "$config_name"; then
+      loaded=1
+    fi
+
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: usb_storage_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for usb-storage
+  ansible.builtin.set_fact:
+    usb_storage_compliant: >-
+      {{ 'COMPLIANT' in usb_storage_audit.stdout or
+          'MODULE_NOT_AVAILABLE' in usb_storage_audit.stdout }}
+
+- name: Show audit result for usb-storage
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 1.1.1.10: usb-storage kernel module is not available or is disabled'
+        if usb_storage_compliant
+        else 'FAIL - CIS 1.1.1.10: usb-storage kernel module is available, loaded, or not correctly disabled'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Unload usb-storage kernel module
+  ansible.builtin.command: "modprobe -r usb-storage"
+  register: usb_storage_unload
+  changed_when: usb_storage_unload.rc == 0
+  failed_when: false
+  when:
+    - not usb_storage_compliant
+    - cis_remediate | default(false) | bool
+
+- name: Disable usb-storage kernel module
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/60-usb-storage.conf
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    line: "{{ item }}"
+    state: present
+  loop:
+    - "install usb_storage /bin/false"
+    - "blacklist usb_storage"
+  when:
+    - not usb_storage_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit usb-storage kernel module
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="usb-storage"
+    config_name="usb_storage"
+    loaded=0
+    lsmod | awk '{print $1}' | grep -Fxq "$module_name" && loaded=1
+    lsmod | awk '{print $1}' | grep -Fxq "$config_name" && loaded=1
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: usb_storage_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - cis_remediate | default(false) | bool
+    - not usb_storage_compliant
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation - 1.1.1.10
+  ansible.builtin.assert:
+    that:
+      - >-
+        (usb_storage_compliant) or
+        ((cis_remediate | default(false) | bool) and
+         ('COMPLIANT' in (usb_storage_verify.stdout | default(''))))
+    success_msg: |
+      PASS - CIS 1.1.1.10 compliant
+
+      Validation Result:
+      - usb-storage kernel module is not available, or
+      - Module is not loaded and has blacklist plus install /bin/false or /bin/true configuration.
+    fail_msg: |
+      FAIL - CIS 1.1.1.10 non-compliant
+
+      Audit details:
+      {{ usb_storage_audit.stdout | default('No audit output') }}
+
+      Remediation is controlled by cis_remediate (default: false).

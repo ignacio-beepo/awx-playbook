@@ -1,0 +1,83 @@
+---
+##############################################################################
+# AUDIT - 1.1.1.11: Ensure unused filesystems kernel modules are not available
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# Profile: Level 1 - Server; Level 1 - Workstation
+# MANUAL recommendation: review dependencies and local site policy before changes.
+##############################################################################
+
+- name: List currently mounted filesystem types
+  ansible.builtin.command: findmnt -Dkerno fstype
+  register: mounted_filesystems_raw
+  changed_when: false
+  failed_when: false
+
+- name: Normalize mounted filesystem types
+  ansible.builtin.set_fact:
+    mounted_filesystems: "{{ mounted_filesystems_raw.stdout_lines | default([]) | unique | sort }}"
+
+- name: Discover installed filesystem kernel modules
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_root="$(readlink -e /usr/lib/modules/ || readlink -e /lib/modules/)"
+    if [ -z "$module_root" ]; then
+      exit 0
+    fi
+
+    find -L "$module_root" -path '*/kernel/fs/*' -type f \
+      ! -path '*/kernel/fs/nls/*' -print 2>/dev/null |
+    while IFS= read -r module_file; do
+      filename="$(basename "$module_file")"
+      module_name="${filename%%.*}"
+      printf '%s\n' "$module_name"
+    done | sort -u
+  args:
+    executable: /bin/bash
+  register: installed_filesystem_modules_raw
+  changed_when: false
+  failed_when: false
+
+- name: Record installed filesystem kernel modules
+  ansible.builtin.set_fact:
+    installed_filesystem_modules: "{{ installed_filesystem_modules_raw.stdout_lines | default([]) | unique | sort }}"
+
+- name: Check loaded filesystem kernel modules
+  ansible.builtin.shell: |
+    set -o pipefail
+    lsmod | awk 'NR > 1 {print $1}' | sort -u
+  args:
+    executable: /bin/bash
+  register: loaded_modules_raw
+  changed_when: false
+  failed_when: false
+
+- name: Identify installed filesystem modules currently loaded
+  ansible.builtin.set_fact:
+    loaded_filesystem_modules: >-
+      {{ installed_filesystem_modules | intersect(loaded_modules_raw.stdout_lines | default([])) }}
+
+- name: Show manual assessment evidence
+  ansible.builtin.debug:
+    msg:
+      - "MANUAL REVIEW REQUIRED - CIS 1.1.1.11"
+      - "Mounted filesystem types (review these before disabling anything): {{ mounted_filesystems | join(', ') }}"
+      - "Installed filesystem kernel modules: {{ installed_filesystem_modules | join(', ') }}"
+      - "Loaded installed filesystem modules: {{ loaded_filesystem_modules | join(', ') }}"
+      - "Do not disable modules required by mounted filesystems, applications, storage, or local site policy."
+      - "CIS identifies these modules for dependency review where unused: ceph, cifs, exfat, ext, fat, fscache, fuse, gfs2, nfs_common, nfsd, smbfs_common."
+
+##############################################################################
+# FINAL CIS VALIDATION - MANUAL
+##############################################################################
+
+- name: Final CIS Validation - 1.1.1.11
+  ansible.builtin.debug:
+    msg: |
+      MANUAL - CIS 1.1.1.11 requires administrator review.
+
+      Review the installed and loaded filesystem modules against:
+      - Currently mounted filesystem types
+      - Application and storage dependencies
+      - Local site policy
+
+      No automatic remediation is performed for this recommendation.

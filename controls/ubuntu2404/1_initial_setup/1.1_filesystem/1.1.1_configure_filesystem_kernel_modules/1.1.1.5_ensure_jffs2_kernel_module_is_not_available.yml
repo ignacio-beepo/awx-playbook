@@ -1,0 +1,158 @@
+---
+##############################################################################
+# AUDIT - 1.1.1.5: Ensure jffs2 kernel module is not available
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# Profile: Level 1 - Server; Level 1 - Workstation
+
+##############################################################################
+
+- name: Audit jffs2 kernel module availability
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="jffs2"
+    module_type="fs"
+    module_dir_name="jffs2"
+    config_name="jffs2"
+
+    # If the module is not present as a loadable module, CIS considers this compliant.
+    module_found=0
+    for base in /usr/lib/modules /lib/modules; do
+      if [ -d "$base" ]; then
+        while IFS= read -r -d '' path; do
+          if [ -n "$(find "$path" -maxdepth 1 -type f -print -quit 2>/dev/null)" ]; then
+            module_found=1
+            break
+          fi
+        done < <(find "$base" -path "*/kernel/fs/jffs2" -type d -print0 2>/dev/null)
+      fi
+      [ "$module_found" -eq 1 ] && break
+    done
+
+    if [ "$module_found" -eq 0 ]; then
+      echo "MODULE_NOT_AVAILABLE"
+      exit 0
+    fi
+
+    loaded=0
+    if lsmod | awk '{print $1}' | grep -Fxq "$module_name"; then
+      loaded=1
+    elif lsmod | awk '{print $1}' | grep -Fxq "$config_name"; then
+      loaded=1
+    fi
+
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: jffs2_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for jffs2
+  ansible.builtin.set_fact:
+    jffs2_compliant: >-
+      {{ 'COMPLIANT' in jffs2_audit.stdout or
+          'MODULE_NOT_AVAILABLE' in jffs2_audit.stdout }}
+
+- name: Show audit result for jffs2
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 1.1.1.5: jffs2 kernel module is not available or is disabled'
+        if jffs2_compliant
+        else 'FAIL - CIS 1.1.1.5: jffs2 kernel module is available, loaded, or not correctly disabled'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Unload jffs2 kernel module
+  ansible.builtin.command: "modprobe -r jffs2"
+  register: jffs2_unload
+  changed_when: jffs2_unload.rc == 0
+  failed_when: false
+  when:
+    - not jffs2_compliant
+    - cis_remediate | default(false) | bool
+
+- name: Disable jffs2 kernel module
+  ansible.builtin.lineinfile:
+    path: /etc/modprobe.d/60-jffs2.conf
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    line: "{{ item }}"
+    state: present
+  loop:
+    - "install jffs2 /bin/false"
+    - "blacklist jffs2"
+  when:
+    - not jffs2_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit jffs2 kernel module
+  ansible.builtin.shell: |
+    set -o pipefail
+    module_name="jffs2"
+    config_name="jffs2"
+    loaded=0
+    lsmod | awk '{print $1}' | grep -Fxq "$module_name" && loaded=1
+    lsmod | awk '{print $1}' | grep -Fxq "$config_name" && loaded=1
+    config="$(modprobe --showconfig 2>/dev/null || true)"
+    blacklist_ok=0
+    install_ok=0
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*blacklist[[:space:]]+($config_name|$module_name)([[:space:]]|$)" && blacklist_ok=1
+    printf '%s\\n' "$config" | grep -Eq "^[[:space:]]*install[[:space:]]+($config_name|$module_name)[[:space:]]+/bin/(false|true)([[:space:]]|$)" && install_ok=1
+    if [ "$loaded" -eq 0 ] && [ "$blacklist_ok" -eq 1 ] && [ "$install_ok" -eq 1 ]; then
+      echo "COMPLIANT"
+    else
+      echo "NON_COMPLIANT loaded=$loaded blacklist=$blacklist_ok install=$install_ok"
+    fi
+  args:
+    executable: /bin/bash
+  register: jffs2_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - cis_remediate | default(false) | bool
+    - not jffs2_compliant
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation - 1.1.1.5
+  ansible.builtin.assert:
+    that:
+      - >-
+        (jffs2_compliant) or
+        ((cis_remediate | default(false) | bool) and
+         ('COMPLIANT' in (jffs2_verify.stdout | default(''))))
+    success_msg: |
+      PASS - CIS 1.1.1.5 compliant
+
+      Validation Result:
+      - jffs2 kernel module is not available, or
+      - Module is not loaded and has blacklist plus install /bin/false or /bin/true configuration.
+    fail_msg: |
+      FAIL - CIS 1.1.1.5 non-compliant
+
+      Audit details:
+      {{ jffs2_audit.stdout | default('No audit output') }}
+
+      Remediation is controlled by cis_remediate (default: false).
