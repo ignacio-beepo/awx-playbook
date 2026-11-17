@@ -1,0 +1,116 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/gshadow exists
+  stat:
+    path: /etc/gshadow
+  register: gshadow_file
+
+- name: Audit /etc/gshadow permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/gshadow
+  register: gshadow_audit
+  changed_when: false
+  failed_when: false
+  when: gshadow_file.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    gshadow_compliant: >-
+      {{
+        (
+          gshadow_file.stat.exists
+        )
+        and
+        (
+          (gshadow_audit.stdout.split('|')[0] | int <= 640)
+          and
+          (gshadow_audit.stdout.split('|')[1] == '0')
+          and
+          (
+            gshadow_audit.stdout.split('|')[2] == '0'
+            or
+            gshadow_audit.stdout.split('|')[3] == 'shadow'
+          )
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/gshadow access is correctly configured'
+        if gshadow_compliant
+        else
+        'FAIL - /etc/gshadow is missing or permissions are incorrect. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create /etc/gshadow if missing
+  command: grpconv
+  when: not gshadow_file.stat.exists
+
+- name: Configure ownership and permissions on /etc/gshadow
+  file:
+    path: /etc/gshadow
+    owner: root
+    group: shadow
+    mode: "0640"
+  when: not gshadow_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/gshadow exists
+  stat:
+    path: /etc/gshadow
+  register: gshadow_verify_file
+
+- name: Recheck /etc/gshadow permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/gshadow
+  register: gshadow_verify
+  changed_when: false
+  failed_when: false
+  when: gshadow_verify_file.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - gshadow_verify_file.stat.exists
+      - "(gshadow_verify.stdout.split('|')[0] | int) <= 640"
+      - "gshadow_verify.stdout.split('|')[1] == '0'"
+      - >
+        (
+          gshadow_verify.stdout.split('|')[2] == '0'
+          or
+          gshadow_verify.stdout.split('|')[3] == 'shadow'
+        )
+
+    success_msg: |
+      PASS - CIS 7.1.7 compliant
+
+      Validation Result:
+      - /etc/gshadow exists
+      - Permissions are 0640 or more restrictive
+      - Owner is root
+      - Group is root or shadow
+
+      Current Configuration:
+      {{ gshadow_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.7 non-compliant
+
+      Current Configuration:
+      {{ gshadow_verify.stdout | default('/etc/gshadow missing') }}
