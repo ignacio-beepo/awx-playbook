@@ -20,15 +20,10 @@
   set_fact:
     passwd_compliant: >-
       {{
-        passwd_file.stat.exists
-        and
-        (
-          (passwd_audit.stdout.split('|')[0] | int <= 644)
-          and
-          (passwd_audit.stdout.split('|')[1] == '0')
-          and
-          (passwd_audit.stdout.split('|')[2] == '0')
-        )
+        passwd_file.stat.exists and
+        (passwd_audit.stdout.split('|')[0] | int <= 644) and
+        (passwd_audit.stdout.split('|')[1] == '0') and
+        (passwd_audit.stdout.split('|')[2] == '0')
       }}
 
 - name: Show audit result
@@ -74,5 +69,23 @@
   assert:
     that:
       - passwd_verify.stdout is defined
-      - "(passwd_verify.stdout.split('|')[0] | int) <= 644"
-      - "passwd_verify
+      - (passwd_verify.stdout.split('|')[0] | int) <= 644
+      - passwd_verify.stdout.split('|')[1] == '0'
+      - passwd_verify.stdout.split('|')[2] == '0'
+
+    success_msg: |
+      PASS - CIS 7.1.1 compliant
+
+      Validation Result:
+      - /etc/passwd permissions are 0644 or more restrictive
+      - Owner is root
+      - Group is root
+
+      Current Configuration:
+      {{ passwd_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.1 non-compliant
+
+      Current Configuration:
+      {{ passwd_verify.stdout | default('Unknown') }}
