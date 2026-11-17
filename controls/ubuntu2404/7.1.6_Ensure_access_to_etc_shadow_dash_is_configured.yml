@@ -1,0 +1,106 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/shadow- exists
+  stat:
+    path: /etc/shadow-
+  register: shadow_backup_file
+
+- name: Audit /etc/shadow- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/shadow-
+  register: shadow_backup_audit
+  changed_when: false
+  failed_when: false
+  when: shadow_backup_file.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    shadow_backup_compliant: >-
+      {{
+        shadow_backup_file.stat.exists
+        and
+        (
+          (shadow_backup_audit.stdout.split('|')[0] | int <= 640)
+          and
+          (shadow_backup_audit.stdout.split('|')[1] == '0')
+          and
+          (
+            shadow_backup_audit.stdout.split('|')[2] == '0'
+            or
+            shadow_backup_audit.stdout.split('|')[3] == 'shadow'
+          )
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/shadow- access is correctly configured'
+        if shadow_backup_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure ownership and permissions on /etc/shadow-
+  file:
+    path: /etc/shadow-
+    owner: root
+    group: shadow
+    mode: "0640"
+  when:
+    - shadow_backup_file.stat.exists
+    - not shadow_backup_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/shadow- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g|%G' /etc/shadow-
+  register: shadow_backup_verify
+  changed_when: false
+  failed_when: false
+  when: shadow_backup_file.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - shadow_backup_file.stat.exists
+      - "(shadow_backup_verify.stdout.split('|')[0] | int) <= 640"
+      - "shadow_backup_verify.stdout.split('|')[1] == '0'"
+      - >
+        (
+          shadow_backup_verify.stdout.split('|')[2] == '0'
+          or
+          shadow_backup_verify.stdout.split('|')[3] == 'shadow'
+        )
+
+    success_msg: |
+      PASS - CIS 7.1.6 compliant
+
+      Validation Result:
+      - /etc/shadow- permissions are 0640 or more restrictive
+      - Owner is root
+      - Group is root or shadow
+
+      Current Configuration:
+      {{ shadow_backup_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.6 non-compliant
+
+      Current Configuration:
+      {{ shadow_backup_verify.stdout | default('/etc/shadow- missing') }}
