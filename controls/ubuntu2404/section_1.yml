@@ -11,7 +11,7 @@
 # Section 1.1.1 - Configure Filesystem Kernel Modules
 # ============================================================
 
-- import_tasks: 1_initial_setup/1.1_filesystem/1.1.2_configure_filesystem_permissions/main.yml
+- import_tasks: 1_initial_setup/1.1_filesystem/1.1.2_configure_filesystem_partitions/main.yml
 # ============================================================
 # OLD Configuration
 # ============================================================
