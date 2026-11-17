@@ -1,0 +1,97 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/group- exists
+  stat:
+    path: /etc/group-
+  register: group_backup_file
+
+- name: Audit /etc/group- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g' /etc/group-
+  register: group_backup_audit
+  changed_when: false
+  failed_when: false
+  when: group_backup_file.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    group_backup_compliant: >-
+      {{
+        group_backup_file.stat.exists
+        and
+        (
+          (group_backup_audit.stdout.split('|')[0] | int <= 644)
+          and
+          (group_backup_audit.stdout.split('|')[1] == '0')
+          and
+          (group_backup_audit.stdout.split('|')[2] == '0')
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/group- access is correctly configured'
+        if group_backup_compliant
+        else
+        'FAIL - Incorrect permissions detected. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure ownership and permissions on /etc/group-
+  file:
+    path: /etc/group-
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - group_backup_file.stat.exists
+    - not group_backup_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck /etc/group- permissions and ownership
+  shell: |
+    stat -Lc '%a|%u|%g' /etc/group-
+  register: group_backup_verify
+  changed_when: false
+  failed_when: false
+  when: group_backup_file.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - group_backup_file.stat.exists
+      - "(group_backup_verify.stdout.split('|')[0] | int) <= 644"
+      - "group_backup_verify.stdout.split('|')[1] == '0'"
+      - "group_backup_verify.stdout.split('|')[2] == '0'"
+
+    success_msg: |
+      PASS - CIS 7.1.4 compliant
+
+      Validation Result:
+      - /etc/group- permissions are 0644 or more restrictive
+      - Owner is root
+      - Group is root
+
+      Current Configuration:
+      {{ group_backup_verify.stdout }}
+
+    fail_msg: |
+      FAIL - CIS 7.1.4 non-compliant
+
+      Current Configuration:
+      {{ group_backup_verify.stdout | default('/etc/group- missing') }}
