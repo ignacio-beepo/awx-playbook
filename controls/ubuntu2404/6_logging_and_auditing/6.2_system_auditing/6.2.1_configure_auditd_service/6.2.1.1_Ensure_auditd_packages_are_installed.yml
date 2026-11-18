@@ -1,0 +1,94 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd package
+  shell: |
+    dpkg-query -s auditd >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: auditd_pkg
+  changed_when: false
+  failed_when: false
+
+- name: Check audispd-plugins package
+  shell: |
+    dpkg-query -s audispd-plugins >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: audispd_pkg
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    auditd_installed_compliant: >-
+      {{
+        auditd_pkg.stdout == 'INSTALLED'
+        and
+        audispd_pkg.stdout == 'INSTALLED'
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - auditd and audispd-plugins are installed'
+        if auditd_installed_compliant
+        else
+        'FAIL - Required audit packages missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Install auditd and audispd-plugins
+  apt:
+    name:
+      - auditd
+      - audispd-plugins
+    state: present
+    update_cache: true
+  when: not auditd_installed_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck auditd package
+  shell: |
+    dpkg-query -s auditd >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: auditd_pkg_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck audispd-plugins package
+  shell: |
+    dpkg-query -s audispd-plugins >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: audispd_pkg_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - auditd_pkg_verify.stdout == 'INSTALLED'
+      - audispd_pkg_verify.stdout == 'INSTALLED'
+
+    success_msg: |
+      PASS - CIS 6.2.1.1 compliant
+
+      Validation Result:
+      - auditd installed
+      - audispd-plugins installed
+
+    fail_msg: |
+      FAIL - CIS 6.2.1.1 non-compliant
+
+      auditd:
+      {{ auditd_pkg_verify.stdout }}
+
+      audispd-plugins:
+      {{ audispd_pkg_verify.stdout }}
