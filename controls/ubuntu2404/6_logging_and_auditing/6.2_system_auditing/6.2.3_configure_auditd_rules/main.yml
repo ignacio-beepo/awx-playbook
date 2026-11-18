@@ -3,3 +3,4 @@
 - include_tasks: 6.2.3.2_Ensure_actions_as_another_user_are_always_logged.yml
 - include_tasks: 6.2.3.3_Ensure_events_that_modify_the_sudo_log_file_are_collected.yml
 - include_tasks: 6.2.3.4_Ensure_events_that_modify_date_and_time_information_are_collected.yml
+- include_tasks: 6.2.3.5_Ensure_events_that_modify_sethostname_and_setdomainname_are_collected.yml
