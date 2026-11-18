@@ -1,0 +1,2 @@
+---
+- include_tasks: 6.2.1.1_Ensure_auditd_packages_are_installed.yml
