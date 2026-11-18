@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for sudo scope changes
+  shell: |
+    auditctl -l 2>/dev/null | grep -E -- '-w /etc/sudoers|-w /etc/sudoers.d' || true
+  register: sudo_scope_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for sudo scope changes
+  shell: |
+    grep -E -- '-w /etc/sudoers|-w /etc/sudoers.d' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: sudo_scope_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    sudo_scope_compliant: >-
+      {{
+        ('-w /etc/sudoers -p wa -k scope' in sudo_scope_running.stdout)
+        and
+        ('-w /etc/sudoers.d -p wa -k scope' in sudo_scope_running.stdout)
+        and
+        ('-w /etc/sudoers -p wa -k scope' in sudo_scope_persistent.stdout)
+        and
+        ('-w /etc/sudoers.d -p wa -k scope' in sudo_scope_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - sudo scope auditing configured'
+        if sudo_scope_compliant
+        else
+        'FAIL - sudo scope auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create sudo scope audit rules file
+  copy:
+    dest: /etc/audit/rules.d/50-scope.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/sudoers -p wa -k scope
+      -w /etc/sudoers.d -p wa -k scope
+  when: not sudo_scope_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not sudo_scope_compliant
+
+- name: Check if reboot is recommended
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not sudo_scope_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E -- '-w /etc/sudoers|-w /etc/sudoers.d' || true
+  register: sudo_scope_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E -- '-w /etc/sudoers|-w /etc/sudoers.d' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: sudo_scope_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/sudoers -p wa -k scope' in sudo_scope_running_verify.stdout"
+      - "'-w /etc/sudoers.d -p wa -k scope' in sudo_scope_running_verify.stdout"
+      - "'-w /etc/sudoers -p wa -k scope' in sudo_scope_persistent_verify.stdout"
+      - "'-w /etc/sudoers.d -p wa -k scope' in sudo_scope_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.1 compliant
+
+      Validation Result:
+      - /etc/sudoers monitored
+      - /etc/sudoers.d monitored
+      - scope audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.1 non-compliant
+
+      Running Rules:
+      {{ sudo_scope_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ sudo_scope_persistent_verify.stdout }}
