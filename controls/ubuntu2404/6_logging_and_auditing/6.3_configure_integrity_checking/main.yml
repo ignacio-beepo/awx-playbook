@@ -1,0 +1,2 @@
+---
+- include_tasks: 6.3.3_Ensure_cryptographic_mechanisms_are_used_to_protect_audit_tools.yml
