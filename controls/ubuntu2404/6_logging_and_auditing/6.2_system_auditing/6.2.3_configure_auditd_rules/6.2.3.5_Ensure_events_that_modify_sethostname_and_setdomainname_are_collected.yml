@@ -1,0 +1,134 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for hostname/domain changes
+  shell: |
+    auditctl -l 2>/dev/null | grep -E 'sethostname|setdomainname' || true
+  register: hostname_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for hostname/domain changes
+  shell: |
+    grep -E 'sethostname|setdomainname' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: hostname_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    hostname_compliant: >-
+      {{
+        ('sethostname' in hostname_running.stdout)
+        and
+        ('setdomainname' in hostname_running.stdout)
+        and
+        ('system-locale' in hostname_running.stdout)
+        and
+        ('sethostname' in hostname_persistent.stdout)
+        and
+        ('setdomainname' in hostname_persistent.stdout)
+        and
+        ('system-locale' in hostname_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Hostname and domain auditing configured'
+        if hostname_compliant
+        else
+        'FAIL - Hostname and domain auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create hostname/domain audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-system_locale.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -a always,exit -F arch=b64 -S sethostname,setdomainname -k system-locale
+      -a always,exit -F arch=b32 -S sethostname,setdomainname -k system-locale
+  when: not hostname_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not hostname_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not hostname_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E 'sethostname|setdomainname' || true
+  register: hostname_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E 'sethostname|setdomainname' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: hostname_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'sethostname' in hostname_running_verify.stdout"
+      - "'setdomainname' in hostname_running_verify.stdout"
+      - "'system-locale' in hostname_running_verify.stdout"
+      - "'sethostname' in hostname_persistent_verify.stdout"
+      - "'setdomainname' in hostname_persistent_verify.stdout"
+      - "'system-locale' in hostname_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.5 compliant
+
+      Validation Result:
+      - sethostname monitored
+      - setdomainname monitored
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.5 non-compliant
+
+      Running Rules:
+      {{ hostname_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ hostname_persistent_verify.stdout }}
