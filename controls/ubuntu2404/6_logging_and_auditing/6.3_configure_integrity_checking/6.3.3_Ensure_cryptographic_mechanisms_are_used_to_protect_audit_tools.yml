@@ -1,0 +1,131 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if AIDE configuration exists
+  stat:
+    path: /etc/aide/aide.conf
+  register: aide_conf
+
+- name: Determine actual audit tool paths
+  shell: |
+    for tool in auditctl auditd ausearch aureport autrace augenrules; do
+      readlink -f /sbin/$tool 2>/dev/null || true
+    done
+  register: audit_tool_paths
+  changed_when: false
+  failed_when: false
+
+- name: Audit AIDE audit tool protections
+  shell: |
+    for tool in auditctl auditd ausearch aureport autrace augenrules; do
+
+      tool_path=$(readlink -f /sbin/$tool 2>/dev/null)
+
+      [ -n "$tool_path" ] || continue
+
+      grep -E "^${tool_path}[[:space:]]+p\+i\+n\+u\+g\+s\+b\+acl\+xattrs\+sha512$" \
+      /etc/aide/aide.conf >/dev/null || \
+      echo "$tool_path"
+
+    done
+  register: aide_audit_tools
+  changed_when: false
+  failed_when: false
+  when: aide_conf.stat.exists
+
+- name: Determine compliance status
+  set_fact:
+    aide_audit_tools_compliant: >-
+      {{
+        aide_conf.stat.exists and
+        (
+          aide_audit_tools.stdout_lines | length == 0
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - AIDE is protecting audit tools with cryptographic integrity checks'
+        if aide_audit_tools_compliant
+        else
+        'FAIL - Required AIDE rules missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Add Audit Tools section header
+  lineinfile:
+    path: /etc/aide/aide.conf
+    line: "# Audit Tools"
+    state: present
+  when:
+    - aide_conf.stat.exists
+    - not aide_audit_tools_compliant
+
+- name: Add AIDE protection rules for audit tools
+  lineinfile:
+    path: /etc/aide/aide.conf
+    line: "{{ item }} p+i+n+u+g+s+b+acl+xattrs+sha512"
+    state: present
+  loop: "{{ aide_audit_tools.stdout_lines }}"
+  when:
+    - aide_conf.stat.exists
+    - not aide_audit_tools_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Re-audit AIDE audit tool protections
+  shell: |
+    for tool in auditctl auditd ausearch aureport autrace augenrules; do
+
+      tool_path=$(readlink -f /sbin/$tool 2>/dev/null)
+
+      [ -n "$tool_path" ] || continue
+
+      grep -E "^${tool_path}[[:space:]]+p\+i\+n\+u\+g\+s\+b\+acl\+xattrs\+sha512$" \
+      /etc/aide/aide.conf >/dev/null || \
+      echo "$tool_path"
+
+    done
+  register: aide_audit_tools_verify
+  changed_when: false
+  failed_when: false
+  when: aide_conf.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - aide_conf.stat.exists
+      - aide_audit_tools_verify.stdout_lines | length == 0
+
+    success_msg: |
+      PASS - CIS 6.3.3 compliant
+
+      Validation Result:
+      - AIDE configuration exists
+      - auditctl protected
+      - auditd protected
+      - ausearch protected
+      - aureport protected
+      - autrace protected
+      - augenrules protected
+      - sha512 integrity protection enabled
+
+    fail_msg: |
+      FAIL - CIS 6.3.3 non-compliant
+
+      Missing AIDE Rules:
+
+      {{ aide_audit_tools_verify.stdout | default('AIDE configuration missing') }}
