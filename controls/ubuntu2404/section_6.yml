@@ -4,4 +4,4 @@
 # Section 7 - System Maintenenace
 # ============================================================
 
-- import_tasks: 6_logging_and_auditing/6.3_configure_integrity_checking/main.yml
+# - import_tasks: 6_logging_and_auditing/6.3_configure_integrity_checking/main.yml
