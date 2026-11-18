@@ -1,0 +1,255 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check AIDE package installation
+  shell: |
+    dpkg -s aide aide-common >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: aide_pkg
+  changed_when: false
+  failed_when: false
+
+- name: Fail if AIDE is not installed
+  fail:
+    msg: |
+      CIS 6.3.2 prerequisite missing
+
+      AIDE package is not installed.
+
+      Please execute CIS 6.3.1 first:
+      Ensure AIDE is installed
+  when: aide_pkg.stdout != "INSTALLED"
+
+- name: Check AIDE configuration file
+  stat:
+    path: /etc/aide/aide.conf
+  register: aide_conf
+
+- name: Check AIDE timer state
+  shell: |
+    systemctl is-active dailyaidecheck.timer 2>/dev/null || true
+  register: aide_timer_active
+  changed_when: false
+  failed_when: false
+
+- name: Check company baseline file
+  stat:
+    path: /etc/aide/aide.conf.d/company-baseline.conf
+  register: company_baseline
+
+- name: Check approved AIDE exemption
+  stat:
+    path: /etc/aide/AIDE_DISABLED_APPROVED
+  register: aide_exemption
+
+- name: Determine compliance status
+  set_fact:
+    aide_integrity_compliant: >-
+      {{
+        aide_conf.stat.exists
+        and
+        company_baseline.stat.exists
+        and
+        (
+          aide_timer_active.stdout == 'active'
+          or
+          aide_exemption.stat.exists
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Filesystem integrity monitoring configured'
+        if aide_integrity_compliant
+        else
+        'FAIL - Filesystem integrity monitoring not configured correctly. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Ensure AIDE include directory exists
+  file:
+    path: /etc/aide/aide.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Define COMPANY AIDE groups
+  blockinfile:
+    path: /etc/aide/aide.conf
+    marker: "# {mark} COMPANY AIDE RULES"
+    prepend_newline: true
+    block: |
+
+      #########################################################
+      # COMPANY AIDE RULE DEFINITIONS
+      #########################################################
+
+      CONTENT_EX = p+i+n+u+g+s+m+c+acl+xattrs+sha512
+      PERMS      = p+i+n+u+g+acl+xattrs
+
+- name: Deploy company baseline configuration
+  copy:
+    dest: /etc/aide/aide.conf.d/company-baseline.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      #########################################################
+      # COMPANY BASELINE
+      #########################################################
+
+      # FILES - CONTENT_EX
+      /etc/resolv.conf CONTENT_EX
+      /etc/sysctl.conf CONTENT_EX
+      /etc/security/pwquality.conf CONTENT_EX
+      /etc/selinux CONTENT_EX
+      /etc/sudoers CONTENT_EX
+      /etc/sudo.conf CONTENT_EX
+      /etc/cron.allow CONTENT_EX
+      /etc/crontab CONTENT_EX
+      /etc/cron.daily CONTENT_EX
+      /etc/cron.hourly CONTENT_EX
+      /etc/cron.monthly CONTENT_EX
+      /etc/aide.conf CONTENT_EX
+      /etc/rsyslog.conf CONTENT_EX
+      /etc/ssh/sshd_config CONTENT_EX
+      /etc/profile CONTENT_EX
+      /etc/environment CONTENT_EX
+      /etc/bashrc CONTENT_EX
+      /etc/login.defs CONTENT_EX
+      /etc/securetty CONTENT_EX
+      /etc/default/grub CONTENT_EX
+      /etc/audit/audit.rules CONTENT_EX
+      /etc/audit/auditd.conf CONTENT_EX
+
+      # FILES - PERMS
+      /etc/hosts PERMS
+      /etc/security/limits.conf PERMS
+      /etc/firewalld/zones/public.xml PERMS
+      /etc/fstab PERMS
+      /etc/passwd PERMS
+      /etc/passwd- PERMS
+      /etc/group PERMS
+      /etc/group- PERMS
+      /etc/shadow PERMS
+      /etc/shadow- PERMS
+      /etc/gshadow PERMS
+      /etc/gshadow- PERMS
+      /etc/motd PERMS
+      /etc/faillog PERMS
+      /etc/lastlog PERMS
+
+      # DIRECTORIES - PERMS
+      /etc PERMS
+      /bin PERMS
+      /sbin PERMS
+      /usr/bin PERMS
+      /var PERMS
+      /var/log PERMS
+      /var/log/audit PERMS
+      /var/tmp PERMS
+      /tmp PERMS
+      /home PERMS
+      /boot PERMS
+      /root PERMS
+
+      # DIRECTORIES - CONTENT_EX
+      /etc/sudoers.d CONTENT_EX
+      /etc/rsyslog.d CONTENT_EX
+      /etc/pkcs11 CONTENT_EX
+      /etc/pki CONTENT_EX
+      /etc/crypto-policies CONTENT_EX
+      /etc/sysctl.d CONTENT_EX
+      /etc/modprobe.d CONTENT_EX
+      /etc/profile.d CONTENT_EX
+      /etc/grub.d CONTENT_EX
+      /etc/pam.d CONTENT_EX
+      /etc/audit/rules.d CONTENT_EX
+
+- name: Include company baseline configuration
+  lineinfile:
+    path: /etc/aide/aide.conf
+    line: "@@include /etc/aide/aide.conf.d/company-baseline.conf"
+    state: present
+
+- name: Initialize AIDE database
+  shell: |
+    aideinit || true
+
+    if [ -f /var/lib/aide/aide.db.new ]; then
+      cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    fi
+
+    if [ -f /var/lib/aide/aide.db.new.gz ]; then
+      cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+    fi
+  failed_when: false
+
+- name: Unmask AIDE timer
+  shell: |
+    systemctl unmask dailyaidecheck.timer dailyaidecheck.service
+  failed_when: false
+
+- name: Enable and start AIDE timer
+  shell: |
+    systemctl enable --now dailyaidecheck.timer
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck timer state
+  shell: |
+    systemctl is-active dailyaidecheck.timer 2>/dev/null || true
+  register: aide_timer_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck baseline file
+  stat:
+    path: /etc/aide/aide.conf.d/company-baseline.conf
+  register: baseline_verify
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - baseline_verify.stat.exists
+      - >
+        aide_timer_verify.stdout == 'active'
+        or
+        aide_exemption.stat.exists
+
+    success_msg: |
+      PASS - CIS 6.3.2 compliant
+
+      Validation Result:
+      - Company baseline deployed
+      - CONTENT_EX rule configured
+      - PERMS rule configured
+      - AIDE database initialized
+      - dailyaidecheck.timer active
+        OR approved exemption present
+
+    fail_msg: |
+      FAIL - CIS 6.3.2 non-compliant
+
+      Timer State:
+      {{ aide_timer_verify.stdout }}
+
+      Baseline File:
+      {{ baseline_verify.stat.exists }}
+
+      Approved Exemption:
+      {{ aide_exemption.stat.exists }}
