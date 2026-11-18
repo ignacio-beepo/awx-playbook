@@ -1,6 +1,6 @@
 ---
 - ansible.builtin.import_tasks: 1.2.1.1_ensure_the_source.list_and_.source_files_use_the_signed-by_option.yml
-- ansible.builtin.import_tasks: 1.2.1.2_ensure_weak_dependencies_are_configured.yml
+#- ansible.builtin.import_tasks: 1.2.1.2_ensure_weak_dependencies_are_configured.yml
 - ansible.builtin.import_tasks: 1.2.1.3_ensure_access_to_gpg_key_files_are_configured.yml
 - ansible.builtin.import_tasks: 1.2.1.4_ensure_access_to_etc_apt_trusted_gpg_d_directory_is_configured.yml
 - ansible.builtin.import_tasks: 1.2.1.5_ensure_access_to_etc_apt_auth_conf_d_directory_is_configured.yml
