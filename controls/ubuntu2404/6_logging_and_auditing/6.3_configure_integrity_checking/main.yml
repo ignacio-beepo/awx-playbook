@@ -1,2 +1,4 @@
 ---
+- include_tasks: 6.3.1_Ensure_AIDE_is_installed.yml
+- include_tasks: 6.3.2_Ensure_filesystem_integrity_is_regularly_checked.yml
 - include_tasks: 6.3.3_Ensure_cryptographic_mechanisms_are_used_to_protect_audit_tools.yml
