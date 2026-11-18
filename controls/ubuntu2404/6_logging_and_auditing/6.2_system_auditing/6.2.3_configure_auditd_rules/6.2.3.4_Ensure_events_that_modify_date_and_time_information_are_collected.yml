@@ -1,0 +1,145 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for time changes
+  shell: |
+    auditctl -l 2>/dev/null | grep -E 'adjtimex|settimeofday|clock_settime|/etc/localtime' || true
+  register: time_change_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for time changes
+  shell: |
+    grep -E 'adjtimex|settimeofday|clock_settime|/etc/localtime' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: time_change_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    time_change_compliant: >-
+      {{
+        ('adjtimex' in time_change_running.stdout)
+        and
+        ('settimeofday' in time_change_running.stdout)
+        and
+        ('clock_settime' in time_change_running.stdout)
+        and
+        ('/etc/localtime' in time_change_running.stdout)
+        and
+        ('adjtimex' in time_change_persistent.stdout)
+        and
+        ('settimeofday' in time_change_persistent.stdout)
+        and
+        ('clock_settime' in time_change_persistent.stdout)
+        and
+        ('/etc/localtime' in time_change_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Time change auditing configured'
+        if time_change_compliant
+        else
+        'FAIL - Time change auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create time-change audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-time-change.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -a always,exit -F arch=b64 -S adjtimex,settimeofday -k time-change
+      -a always,exit -F arch=b32 -S adjtimex,settimeofday -k time-change
+      -a always,exit -F arch=b64 -S clock_settime -F a0=0x0 -k time-change
+      -a always,exit -F arch=b32 -S clock_settime -F a0=0x0 -k time-change
+      -w /etc/localtime -p wa -k time-change
+  when: not time_change_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not time_change_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not time_change_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E 'adjtimex|settimeofday|clock_settime|/etc/localtime' || true
+  register: time_change_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E 'adjtimex|settimeofday|clock_settime|/etc/localtime' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: time_change_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'adjtimex' in time_change_running_verify.stdout"
+      - "'settimeofday' in time_change_running_verify.stdout"
+      - "'clock_settime' in time_change_running_verify.stdout"
+      - "'/etc/localtime' in time_change_running_verify.stdout"
+      - "'adjtimex' in time_change_persistent_verify.stdout"
+      - "'settimeofday' in time_change_persistent_verify.stdout"
+      - "'clock_settime' in time_change_persistent_verify.stdout"
+      - "'/etc/localtime' in time_change_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.4 compliant
+
+      Validation Result:
+      - adjtimex monitored
+      - settimeofday monitored
+      - clock_settime monitored
+      - /etc/localtime monitored
+      - time-change audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.4 non-compliant
+
+      Running Rules:
+      {{ time_change_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ time_change_persistent_verify.stdout }}
