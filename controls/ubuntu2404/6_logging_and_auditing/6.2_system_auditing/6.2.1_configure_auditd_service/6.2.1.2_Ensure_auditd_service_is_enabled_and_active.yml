@@ -1,0 +1,105 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd enabled state
+  shell: |
+    systemctl is-enabled auditd 2>/dev/null || true
+  register: auditd_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Check auditd active state
+  shell: |
+    systemctl is-active auditd 2>/dev/null || true
+  register: auditd_active
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    auditd_service_compliant: >-
+      {{
+        auditd_enabled.stdout == 'enabled'
+        and
+        auditd_active.stdout == 'active'
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - auditd service is enabled and active'
+        if auditd_service_compliant
+        else
+        'FAIL - auditd service is not enabled and active. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Unmask auditd service
+  shell: |
+    systemctl unmask auditd
+  when: not auditd_service_compliant
+  failed_when: false
+
+- name: Enable auditd service
+  systemd:
+    name: auditd
+    enabled: true
+  when: not auditd_service_compliant
+  failed_when: false
+
+- name: Start auditd service
+  systemd:
+    name: auditd
+    state: started
+  when: not auditd_service_compliant
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck auditd enabled state
+  shell: |
+    systemctl is-enabled auditd 2>/dev/null || true
+  register: auditd_enabled_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck auditd active state
+  shell: |
+    systemctl is-active auditd 2>/dev/null || true
+  register: auditd_active_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - auditd_enabled_verify.stdout == 'enabled'
+      - auditd_active_verify.stdout == 'active'
+
+    success_msg: |
+      PASS - CIS 6.2.1.2 compliant
+
+      Validation Result:
+      - auditd service enabled
+      - auditd service active
+
+    fail_msg: |
+      FAIL - CIS 6.2.1.2 non-compliant
+
+      Enabled State:
+      {{ auditd_enabled_verify.stdout }}
+
+      Active State:
+      {{ auditd_active_verify.stdout }}
