@@ -1,0 +1,2 @@
+---
+- include_tasks: 6.2.3.1_Ensure_changes_to_system_administration_scope_are_collected.yml
