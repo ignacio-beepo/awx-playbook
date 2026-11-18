@@ -1,0 +1,11 @@
+---
+- include_tasks: 7.2.1_Ensure_accounts_in_passwd_use_shadowed_passwords.yml
+- include_tasks: 7.2.2_Ensure_shadow_password_fields_are_not_empty.yml
+- include_tasks: 7.2.3_Ensure_all_groups_in_passwd_exist_in_group.yml
+- include_tasks: 7.2.4_Ensure_shadow_group_is_empty.yml
+- include_tasks: 7.2.5_Ensure_no_duplicate_UIDs_exist.yml
+- include_tasks: 7.2.6_Ensure_no_duplicate_GIDs_exist.yml
+- include_tasks: 7.2.7_Ensure_no_duplicate_user_names_exist.yml
+- include_tasks: 7.2.8_Ensure_no_duplicate_group_names_exist.yml
+- include_tasks: 7.2.9_Ensure_local_interactive_user_home_directories_are_configured.yml
+- include_tasks: 7.2.10_Ensure_local_interactive_user_dot_files_access_is_configured.yml
