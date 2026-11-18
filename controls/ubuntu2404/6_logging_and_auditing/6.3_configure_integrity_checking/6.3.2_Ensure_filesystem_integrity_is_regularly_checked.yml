@@ -5,7 +5,9 @@
 
 - name: Check AIDE package installation
   shell: |
-    dpkg -s aide aide-common >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+    dpkg-query -s aide >/dev/null 2>&1 && \
+    dpkg-query -s aide-common >/dev/null 2>&1 && \
+    echo INSTALLED || echo MISSING
   register: aide_pkg
   changed_when: false
   failed_when: false
@@ -26,17 +28,22 @@
     path: /etc/aide/aide.conf
   register: aide_conf
 
+- name: Check company baseline file
+  stat:
+    path: /etc/aide/aide.conf.d/company-baseline.conf
+  register: company_baseline
+
+- name: Check AIDE database
+  stat:
+    path: /var/lib/aide/aide.db
+  register: aide_db
+
 - name: Check AIDE timer state
   shell: |
     systemctl is-active dailyaidecheck.timer 2>/dev/null || true
   register: aide_timer_active
   changed_when: false
   failed_when: false
-
-- name: Check company baseline file
-  stat:
-    path: /etc/aide/aide.conf.d/company-baseline.conf
-  register: company_baseline
 
 - name: Check approved AIDE exemption
   stat:
@@ -53,8 +60,7 @@
         and
         (
           aide_timer_active.stdout == 'active'
-          or
-          aide_exemption.stat.exists
+          or aide_exemption.stat.exists
         )
       }}
 
@@ -80,7 +86,7 @@
     group: root
     mode: "0755"
 
-- name: Define COMPANY AIDE groups
+- name: Define COMPANY AIDE rule groups
   blockinfile:
     path: /etc/aide/aide.conf
     marker: "# {mark} COMPANY AIDE RULES"
@@ -105,7 +111,10 @@
       # COMPANY BASELINE
       #########################################################
 
+      #########################################################
       # FILES - CONTENT_EX
+      #########################################################
+
       /etc/resolv.conf CONTENT_EX
       /etc/sysctl.conf CONTENT_EX
       /etc/security/pwquality.conf CONTENT_EX
@@ -126,10 +135,12 @@
       /etc/login.defs CONTENT_EX
       /etc/securetty CONTENT_EX
       /etc/default/grub CONTENT_EX
-      /etc/audit/audit.rules CONTENT_EX
       /etc/audit/auditd.conf CONTENT_EX
 
+      #########################################################
       # FILES - PERMS
+      #########################################################
+
       /etc/hosts PERMS
       /etc/security/limits.conf PERMS
       /etc/firewalld/zones/public.xml PERMS
@@ -146,7 +157,10 @@
       /etc/faillog PERMS
       /etc/lastlog PERMS
 
+      #########################################################
       # DIRECTORIES - PERMS
+      #########################################################
+
       /etc PERMS
       /bin PERMS
       /sbin PERMS
@@ -160,7 +174,10 @@
       /boot PERMS
       /root PERMS
 
+      #########################################################
       # DIRECTORIES - CONTENT_EX
+      #########################################################
+
       /etc/sudoers.d CONTENT_EX
       /etc/rsyslog.d CONTENT_EX
       /etc/pkcs11 CONTENT_EX
@@ -181,7 +198,7 @@
 
 - name: Initialize AIDE database
   shell: |
-    aideinit || true
+    aideinit
 
     if [ -f /var/lib/aide/aide.db.new ]; then
       cp /var/lib/aide/aide.db.new /var/lib/aide/aide.db
@@ -190,6 +207,9 @@
     if [ -f /var/lib/aide/aide.db.new.gz ]; then
       cp /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
     fi
+  args:
+    executable: /bin/bash
+  when: not aide_db.stat.exists
   failed_when: false
 
 - name: Unmask AIDE timer
@@ -228,8 +248,7 @@
       - baseline_verify.stat.exists
       - >
         aide_timer_verify.stdout == 'active'
-        or
-        aide_exemption.stat.exists
+        or aide_exemption.stat.exists
 
     success_msg: |
       PASS - CIS 6.3.2 compliant
