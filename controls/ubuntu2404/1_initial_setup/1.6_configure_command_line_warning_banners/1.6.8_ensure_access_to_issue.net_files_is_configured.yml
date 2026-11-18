@@ -1,0 +1,54 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.6.8 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.6.8
+  ansible.builtin.shell: |
+    bad=0; for p in /etc/issue.net /usr/lib/issue.net.d/* /etc/issue.net.d/* /run/issue.net.d/*; do [ -f "$p" ] || continue; read u g m < <(stat -Lc '%u %g %a' "$p"); if [ "$u" != 0 ] || [ "$g" != 0 ] || [ $((8#$m & 022)) -ne 0 ]; then echo "$p owner=$u:$g mode=$m"; bad=1; fi; done; [ "$bad" -eq 0 ] && echo COMPLIANT || echo NON_COMPLIANT
+  args:
+    executable: /bin/bash
+  register: cis_1_6_8_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.6.8
+  ansible.builtin.set_fact:
+    cis_1_6_8_compliant: "{{ (cis_1_6_8_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.6.8
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_6_8_compliant else 'NON-COMPLIANT' }} - CIS 1.6.8: {{ cis_1_6_8_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.6.8
+  block:
+    - name: Manual remediation notice for CIS 1.6.8
+      ansible.builtin.debug:
+        msg: "Apply site-approved remediation after reviewing the audit evidence."
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_6_8_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.6.8
+  ansible.builtin.shell: |
+    bad=0; for p in /etc/issue.net /usr/lib/issue.net.d/* /etc/issue.net.d/* /run/issue.net.d/*; do [ -f "$p" ] || continue; read u g m < <(stat -Lc '%u %g %a' "$p"); if [ "$u" != 0 ] || [ "$g" != 0 ] || [ $((8#$m & 022)) -ne 0 ]; then echo "$p owner=$u:$g mode=$m"; bad=1; fi; done; [ "$bad" -eq 0 ] && echo COMPLIANT || echo NON_COMPLIANT
+  args:
+    executable: /bin/bash
+  register: cis_1_6_8_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.6.8
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_6_8_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.6.8: {{ cis_1_6_8_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

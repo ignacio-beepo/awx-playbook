@@ -1,0 +1,54 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.5.7 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.5.7
+  ansible.builtin.shell: |
+    if ! dpkg-query -W -f='${Status}' apport 2>/dev/null | grep -q 'install ok installed' || ! systemctl is-active --quiet apport.service; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_7_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.5.7
+  ansible.builtin.set_fact:
+    cis_1_5_7_compliant: "{{ (cis_1_5_7_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.5.7
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_5_7_compliant else 'NON-COMPLIANT' }} - CIS 1.5.7: {{ cis_1_5_7_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.5.7
+  block:
+    - name: Disable Apport service
+      ansible.builtin.systemd:
+        name: apport.service
+        enabled: false
+        state: stopped
+      failed_when: false
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_5_7_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.5.7
+  ansible.builtin.shell: |
+    if ! dpkg-query -W -f='${Status}' apport 2>/dev/null | grep -q 'install ok installed' || ! systemctl is-active --quiet apport.service; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_7_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.5.7
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_5_7_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.5.7: {{ cis_1_5_7_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

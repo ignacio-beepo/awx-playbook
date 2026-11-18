@@ -1,0 +1,58 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.6.2 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.6.2
+  ansible.builtin.shell: |
+    if [ -f /etc/issue ] && ! grep -Eiq '\\[\\mrv]|Ubuntu|Linux [0-9]' /etc/issue; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_2_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.6.2
+  ansible.builtin.set_fact:
+    cis_1_6_2_compliant: "{{ (cis_1_6_2_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.6.2
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_6_2_compliant else 'NON-COMPLIANT' }} - CIS 1.6.2: {{ cis_1_6_2_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.6.2
+  block:
+    - name: Remediate CIS 1.6.2
+      ansible.builtin.copy:
+        dest: /etc/issue
+        owner: root
+        group: root
+        mode: "0644"
+        content: "{{ cis_login_banner_text | default('Authorized users only. All activity may be monitored and reported.') }}\n" 
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_6_2_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.6.2
+  ansible.builtin.shell: |
+    if [ -f /etc/issue ] && ! grep -Eiq '\\[\\mrv]|Ubuntu|Linux [0-9]' /etc/issue; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_2_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.6.2
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_6_2_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.6.2: {{ cis_1_6_2_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

@@ -1,0 +1,16 @@
+---
+- name: Include CIS section controls
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop:
+    - 1.5.1_ensure_fs.protected_hardlinks_is_configured.yml
+    - 1.5.2_ensure_fs.protected_symlinks_is_configured.yml
+    - 1.5.3_ensure_kernel.yama.ptrace_scope_is_configured.yml
+    - 1.5.4_ensure_fs.suid_dumpable_is_configured.yml
+    - 1.5.5_ensure_kernel.dmesg_restrict_is_configured.yml
+    - 1.5.6_ensure_prelink_is_not_installed.yml
+    - 1.5.7_ensure_automatic_error_reporting_is_configured.yml
+    - 1.5.8_ensure_kernel.kptr_restrict_is_configured.yml
+    - 1.5.9_ensure_kernel.randomize_va_space_is_configured.yml
+    - 1.5.10_ensure_systemd_coredump_core_file_size_is_configured.yml
+    - 1.5.11_ensure_systemd-coredump_processsizemax_is_configured.yml
+    - 1.5.12_ensure_systemd-coredump_storage_is_configured.yml

@@ -1,0 +1,58 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.6.4 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.6.4
+  ansible.builtin.shell: |
+    if [ ! -e /etc/motd ]; then echo COMPLIANT; else read u g m < <(stat -Lc '%u %g %a' /etc/motd); if [ "$u" = 0 ] && [ "$g" = 0 ] && [ $((8#$m & 022)) -eq 0 ] && [ $((8#$m & 0111)) -eq 0 ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "owner=$u:$g mode=$m"; fi; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_4_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.6.4
+  ansible.builtin.set_fact:
+    cis_1_6_4_compliant: "{{ (cis_1_6_4_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.6.4
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_6_4_compliant else 'NON-COMPLIANT' }} - CIS 1.6.4: {{ cis_1_6_4_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.6.4
+  block:
+    - name: Remediate CIS 1.6.4
+      ansible.builtin.file:
+        path: /etc/motd
+        owner: root
+        group: root
+        mode: "0644"
+        follow: true
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_6_4_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.6.4
+  ansible.builtin.shell: |
+    if [ ! -e /etc/motd ]; then echo COMPLIANT; else read u g m < <(stat -Lc '%u %g %a' /etc/motd); if [ "$u" = 0 ] && [ "$g" = 0 ] && [ $((8#$m & 022)) -eq 0 ] && [ $((8#$m & 0111)) -eq 0 ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "owner=$u:$g mode=$m"; fi; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_4_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.6.4
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_6_4_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.6.4: {{ cis_1_6_4_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

@@ -1,0 +1,61 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.5.2 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.5.2
+  ansible.builtin.shell: |
+    v="$(sysctl -n fs.protected_symlinks 2>/dev/null || true)"
+    if [ "$v" = "1" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "fs.protected_symlinks=${v:-unset} expected 1"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_2_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.5.2
+  ansible.builtin.set_fact:
+    cis_1_5_2_compliant: "{{ (cis_1_5_2_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.5.2
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_5_2_compliant else 'NON-COMPLIANT' }} - CIS 1.5.2: {{ cis_1_5_2_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.5.2
+  block:
+    - name: Configure fs.protected_symlinks
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-cis-fs-protected_symlinks.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          fs.protected_symlinks = 1
+    - name: Apply sysctl configuration
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_5_2_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.5.2
+  ansible.builtin.shell: |
+    v="$(sysctl -n fs.protected_symlinks 2>/dev/null || true)"
+    if [ "$v" = "1" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "fs.protected_symlinks=${v:-unset} expected 1"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_2_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.5.2
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_5_2_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.5.2: {{ cis_1_5_2_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

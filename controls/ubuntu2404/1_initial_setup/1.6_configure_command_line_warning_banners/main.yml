@@ -1,0 +1,14 @@
+---
+- name: Include CIS section controls
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop:
+    - 1.6.1_ensure_etc_motd_is_configured.yml
+    - 1.6.2_ensure_etc_issue_is_configured.yml
+    - 1.6.3_ensure_etc_issue.net_is_configured.yml
+    - 1.6.4_ensure_access_to_etc_motd_is_configured.yml
+    - 1.6.5_ensure_access_to_etc_issue_is_configured.yml
+    - 1.6.6_ensure_access_to_etc_issue.net_is_configured.yml
+    - 1.6.7_ensure_access_to_issue_files_is_configured.yml
+    - 1.6.8_ensure_access_to_issue.net_files_is_configured.yml
+    - 1.6.9_ensure_access_to_pam_motd_file_is_configured.yml
+    - 1.6.10_ensure_access_to_sshd_warning_banner_is_configured.yml

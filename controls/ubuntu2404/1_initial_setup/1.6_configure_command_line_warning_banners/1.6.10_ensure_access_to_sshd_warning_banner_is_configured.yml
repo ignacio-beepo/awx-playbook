@@ -1,0 +1,57 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.6.10 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.6.10
+  ansible.builtin.shell: |
+    p="$(sshd -T 2>/dev/null | awk '$1=="banner"{print $2;exit}')"; if [ -z "$p" ] || [ "$p" = none ]; then echo MANUAL_REVIEW; else read u g m < <(stat -Lc '%u %g %a' "$p" 2>/dev/null); if [ "$u" = 0 ] && [ "$g" = 0 ] && [ $((8#$m & 022)) -eq 0 ]; then echo COMPLIANT; else echo NON_COMPLIANT; fi; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_10_audit
+  changed_when: false
+  failed_when: false
+
+- name: Record manual review for CIS 1.6.10
+  ansible.builtin.set_fact:
+    cis_1_6_10_compliant: false
+    cis_1_6_10_manual_review: true
+- name: Show audit result for CIS 1.6.10
+  ansible.builtin.debug:
+    msg: "MANUAL REVIEW - CIS 1.6.10: {{ cis_1_6_10_audit.stdout | default('See audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.6.10
+  block:
+    - name: Manual remediation notice for CIS 1.6.10
+      ansible.builtin.debug:
+        msg: >-
+          Configure a legally approved sshd Banner path first, then set that file
+          to root:root and remove group/other write permissions.
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_6_10_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.6.10
+  ansible.builtin.shell: |
+    p="$(sshd -T 2>/dev/null | awk '$1=="banner"{print $2;exit}')"; if [ -z "$p" ] || [ "$p" = none ]; then echo MANUAL_REVIEW; else read u g m < <(stat -Lc '%u %g %a' "$p" 2>/dev/null); if [ "$u" = 0 ] && [ "$g" = 0 ] && [ $((8#$m & 022)) -eq 0 ]; then echo COMPLIANT; else echo NON_COMPLIANT; fi; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_6_10_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.6.10
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_6_10_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.6.10: {{ cis_1_6_10_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

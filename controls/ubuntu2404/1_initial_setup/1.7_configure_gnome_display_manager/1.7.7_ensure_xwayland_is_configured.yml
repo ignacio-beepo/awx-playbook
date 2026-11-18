@@ -1,0 +1,57 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.7.7 | Ensure Xwayland is configured
+# Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.7.7 - Xwayland configuration
+  ansible.builtin.shell: |
+    if ! dpkg-query -W -f='${Status}' gdm3 2>/dev/null | grep -q 'install ok installed'; then echo NOT_APPLICABLE; exit 0; fi
+    if grep -RhsE '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' /etc/gdm3/custom.conf /etc/gdm3/custom.conf.d/*.conf 2>/dev/null | grep -q .; then echo COMPLIANT; else echo NON_COMPLIANT; echo 'WaylandEnable=false not found in GDM configuration'; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_7_7_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.7.7
+  ansible.builtin.set_fact:
+    cis_1_7_7_compliant: "{{ (cis_1_7_7_audit.stdout_lines | default([]) | first | default('')) in ['COMPLIANT','NOT_APPLICABLE'] }}"
+
+- name: Show audit result for CIS 1.7.7
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_7_7_compliant else 'NON-COMPLIANT' }} - CIS 1.7.7: {{ cis_1_7_7_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.7.7 - configure Xwayland
+  ansible.builtin.debug:
+    msg: >-
+      Review the CIS v2.0.0 Xwayland recommendation and GDM configuration.
+      On Ubuntu, WaylandEnable=false in /etc/gdm3/custom.conf disables Wayland
+      and enables the Xorg session; confirm this is the intended benchmark
+      setting for the target desktop before changing it.
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_7_7_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.7.7 - Xwayland configuration
+  ansible.builtin.shell: |
+    if ! dpkg-query -W -f='${Status}' gdm3 2>/dev/null | grep -q 'install ok installed'; then echo NOT_APPLICABLE; exit 0; fi
+    if grep -RhsE '^[[:space:]]*WaylandEnable[[:space:]]*=[[:space:]]*false' /etc/gdm3/custom.conf /etc/gdm3/custom.conf.d/*.conf 2>/dev/null | grep -q .; then echo COMPLIANT; else echo NON_COMPLIANT; echo 'WaylandEnable=false not found in GDM configuration'; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_7_7_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Show recheck result for CIS 1.7.7
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_7_7_verify.stdout_lines | default([]) | first | default('')) in ['COMPLIANT','NOT_APPLICABLE'] else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.7.7: {{ cis_1_7_7_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool

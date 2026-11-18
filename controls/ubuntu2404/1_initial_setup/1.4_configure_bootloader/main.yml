@@ -1,0 +1,6 @@
+---
+- name: Include CIS section controls
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop:
+    - 1.4.1_ensure_bootloader_password_is_set.yml
+    - 1.4.2_ensure_access_to_bootloader_config_is_configured.yml

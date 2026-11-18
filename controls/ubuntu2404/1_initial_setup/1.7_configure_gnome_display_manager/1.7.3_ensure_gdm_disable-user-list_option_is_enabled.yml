@@ -1,0 +1,56 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.7.3 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.7.3
+  ansible.builtin.shell: |
+    echo MANUAL_REVIEW
+  args:
+    executable: /bin/bash
+  register: cis_1_7_3_audit
+  changed_when: false
+  failed_when: false
+
+- name: Record manual review for CIS 1.7.3
+  ansible.builtin.set_fact:
+    cis_1_7_3_compliant: false
+    cis_1_7_3_manual_review: true
+- name: Show audit result for CIS 1.7.3
+  ansible.builtin.debug:
+    msg: "MANUAL REVIEW - CIS 1.7.3: {{ cis_1_7_3_audit.stdout | default('See audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.7.3
+  block:
+    - name: Manual remediation notice for CIS 1.7.3
+      ansible.builtin.debug:
+        msg: >-
+          Configure and lock the GNOME dconf disable-user-list key.
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_7_3_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.7.3
+  ansible.builtin.shell: |
+    echo MANUAL_REVIEW
+  args:
+    executable: /bin/bash
+  register: cis_1_7_3_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.7.3
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_7_3_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.7.3: {{ cis_1_7_3_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

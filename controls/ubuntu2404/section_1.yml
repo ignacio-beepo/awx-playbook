@@ -12,6 +12,41 @@
 # ============================================================
 
 - ansible.builtin.import_tasks: 1_initial_setup/1.2_package_management/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.3 - Mandatory Access Control
+# ============================================================
+
+- ansible.builtin.import_tasks: 1_initial_setup/1.3_mandatory_access_control/1.3.1_configure_apparmor/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.4 - Configure Bootloader
+# ============================================================
+
+- ansible.builtin.import_tasks: 1_initial_setup/1.4_configure_bootloader/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.5 - Configure Additional Process Hardening
+# ============================================================
+
+- ansible.builtin.import_tasks: 1_initial_setup/1.5_configure_additional_process_hardening/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.6 - Configure Command Line Warning Banners
+# ============================================================
+
+- ansible.builtin.import_tasks: 1_initial_setup/1.6_configure_command_line_warning_banners/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 1.7 - Configure Gnome Display Manager
+# ============================================================
+
+- ansible.builtin.import_tasks: 1_initial_setup/1.7_configure_gnome_display_manager/main.yml
 # ============================================================
 # OLD Configuration
 # ============================================================

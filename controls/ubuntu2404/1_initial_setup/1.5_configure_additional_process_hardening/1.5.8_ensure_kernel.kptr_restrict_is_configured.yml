@@ -1,0 +1,61 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.5.8 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.5.8
+  ansible.builtin.shell: |
+    v="$(sysctl -n kernel.kptr_restrict 2>/dev/null || true)"
+    if [ "$v" = "2" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "kernel.kptr_restrict=${v:-unset} expected 2"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_8_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.5.8
+  ansible.builtin.set_fact:
+    cis_1_5_8_compliant: "{{ (cis_1_5_8_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.5.8
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_5_8_compliant else 'NON-COMPLIANT' }} - CIS 1.5.8: {{ cis_1_5_8_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.5.8
+  block:
+    - name: Configure kernel.kptr_restrict
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-cis-kernel-kptr_restrict.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          kernel.kptr_restrict = 2
+    - name: Apply sysctl configuration
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_5_8_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.5.8
+  ansible.builtin.shell: |
+    v="$(sysctl -n kernel.kptr_restrict 2>/dev/null || true)"
+    if [ "$v" = "2" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "kernel.kptr_restrict=${v:-unset} expected 2"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_8_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.5.8
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_5_8_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.5.8: {{ cis_1_5_8_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

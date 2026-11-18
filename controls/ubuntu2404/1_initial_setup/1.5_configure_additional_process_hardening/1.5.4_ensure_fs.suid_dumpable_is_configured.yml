@@ -1,0 +1,61 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.5.4 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.5.4
+  ansible.builtin.shell: |
+    v="$(sysctl -n fs.suid_dumpable 2>/dev/null || true)"
+    if [ "$v" = "0" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "fs.suid_dumpable=${v:-unset} expected 0"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_4_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.5.4
+  ansible.builtin.set_fact:
+    cis_1_5_4_compliant: "{{ (cis_1_5_4_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.5.4
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_5_4_compliant else 'NON-COMPLIANT' }} - CIS 1.5.4: {{ cis_1_5_4_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.5.4
+  block:
+    - name: Configure fs.suid_dumpable
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-cis-fs-suid_dumpable.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          fs.suid_dumpable = 0
+    - name: Apply sysctl configuration
+      ansible.builtin.command: sysctl --system
+      changed_when: true
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_5_4_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.5.4
+  ansible.builtin.shell: |
+    v="$(sysctl -n fs.suid_dumpable 2>/dev/null || true)"
+    if [ "$v" = "0" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "fs.suid_dumpable=${v:-unset} expected 0"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_4_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.5.4
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_5_4_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.5.4: {{ cis_1_5_4_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+

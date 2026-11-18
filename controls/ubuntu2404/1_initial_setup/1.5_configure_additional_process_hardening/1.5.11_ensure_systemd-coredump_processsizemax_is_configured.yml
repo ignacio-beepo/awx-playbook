@@ -1,0 +1,59 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.5.11 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported; it does not fail the Ansible task.
+##############################################################################
+- name: Audit CIS 1.5.11
+  ansible.builtin.shell: |
+    x="$(systemd-analyze cat-config systemd/coredump.conf 2>/dev/null | awk -F= '/^[[:space:]]*ProcessSizeMax[[:space:]]*=/{gsub(/[[:space:]]/,"",$2);v=$2} END{print v}')"
+    if [ "$x" = "0" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "ProcessSizeMax=${x:-default} expected 0"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_11_audit
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status for CIS 1.5.11
+  ansible.builtin.set_fact:
+    cis_1_5_11_compliant: "{{ (cis_1_5_11_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+- name: Show audit result for CIS 1.5.11
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_5_11_compliant else 'NON-COMPLIANT' }} - CIS 1.5.11: {{ cis_1_5_11_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+- name: Remediate CIS 1.5.11
+  block:
+    - name: Configure systemd-coredump ProcessSizeMax
+      ansible.builtin.copy:
+        dest: /etc/systemd/coredump.conf.d/60-cis.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Coredump]
+          ProcessSizeMax=0
+  when:
+    - cis_remediate | default(false) | bool
+    - not cis_1_5_11_compliant | default(false)
+
+##############################################################################
+# RECHECK
+##############################################################################
+- name: Recheck CIS 1.5.11
+  ansible.builtin.shell: |
+    x="$(systemd-analyze cat-config systemd/coredump.conf 2>/dev/null | awk -F= '/^[[:space:]]*ProcessSizeMax[[:space:]]*=/{gsub(/[[:space:]]/,"",$2);v=$2} END{print v}')"
+    if [ "$x" = "0" ]; then echo COMPLIANT; else echo NON_COMPLIANT; echo "ProcessSizeMax=${x:-default} expected 0"; fi
+  args:
+    executable: /bin/bash
+  register: cis_1_5_11_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Show recheck result for CIS 1.5.11
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if (cis_1_5_11_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' else 'NON-COMPLIANT / MANUAL REVIEW' }} - CIS 1.5.11: {{ cis_1_5_11_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
+
