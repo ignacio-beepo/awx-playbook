@@ -1,0 +1,120 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check AIDE package
+  shell: |
+    dpkg-query -s aide >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: aide_pkg
+  changed_when: false
+  failed_when: false
+
+- name: Check AIDE Common package
+  shell: |
+    dpkg-query -s aide-common >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: aide_common_pkg
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    aide_installed_compliant: >-
+      {{
+        aide_pkg.stdout == 'INSTALLED'
+        and
+        aide_common_pkg.stdout == 'INSTALLED'
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - AIDE packages are installed'
+        if aide_installed_compliant
+        else
+        'FAIL - AIDE packages are missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Install AIDE packages
+  apt:
+    name:
+      - aide
+      - aide-common
+    state: present
+    update_cache: true
+  when: not aide_installed_compliant
+
+- name: Initialize AIDE database
+  shell: |
+    aideinit || true
+
+    if [ -f /var/lib/aide/aide.db.new ]; then
+      mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+    fi
+
+    if [ -f /var/lib/aide/aide.db.new.gz ]; then
+      mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz
+    fi
+  args:
+    executable: /bin/bash
+  failed_when: false
+  when: not aide_installed_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck AIDE package
+  shell: |
+    dpkg-query -s aide >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: aide_pkg_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck AIDE Common package
+  shell: |
+    dpkg-query -s aide-common >/dev/null 2>&1 && echo INSTALLED || echo MISSING
+  register: aide_common_pkg_verify
+  changed_when: false
+  failed_when: false
+
+- name: Check AIDE database exists
+  stat:
+    path: /var/lib/aide
+  register: aide_db_verify
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - aide_pkg_verify.stdout == 'INSTALLED'
+      - aide_common_pkg_verify.stdout == 'INSTALLED'
+      - aide_db_verify.stat.exists
+
+    success_msg: |
+      PASS - CIS 6.3.1 compliant
+
+      Validation Result:
+      - aide package installed
+      - aide-common package installed
+      - AIDE database initialized
+
+    fail_msg: |
+      FAIL - CIS 6.3.1 non-compliant
+
+      aide:
+      {{ aide_pkg_verify.stdout }}
+
+      aide-common:
+      {{ aide_common_pkg_verify.stdout }}
+
+      AIDE Database Directory:
+      {{ aide_db_verify.stat.exists }}
