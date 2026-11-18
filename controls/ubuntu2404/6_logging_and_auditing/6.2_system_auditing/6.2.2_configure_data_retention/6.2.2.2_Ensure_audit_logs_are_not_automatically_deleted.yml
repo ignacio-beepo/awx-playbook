@@ -1,0 +1,140 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd configuration exists
+  stat:
+    path: /etc/audit/auditd.conf
+  register: auditd_conf
+
+- name: Get max_log_file_action value
+  shell: |
+    grep -Pi '^\s*max_log_file_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: max_log_file_action
+  changed_when: false
+  failed_when: false
+
+- name: Get num_logs value
+  shell: |
+    grep -Po '^\s*num_logs\s*=\s*\K\d+' /etc/audit/auditd.conf | tail -1
+  register: num_logs_value
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    audit_log_retention_compliant: >-
+      {{
+        (
+          max_log_file_action.stdout == 'keep_logs'
+        )
+        or
+        (
+          max_log_file_action.stdout == 'rotate'
+          and
+          (num_logs_value.stdout | default('0') | int) > 0
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Audit log retention configured according to company policy'
+        if audit_log_retention_compliant
+        else
+        'FAIL - Audit log retention policy not compliant. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure max_log_file_action
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*max_log_file_action\s*='
+    line: 'max_log_file_action = rotate'
+    state: present
+  when: not audit_log_retention_compliant
+
+- name: Configure num_logs
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*num_logs\s*='
+    line: 'num_logs = 10'
+    state: present
+  when: not audit_log_retention_compliant
+
+- name: Restart auditd
+  systemd:
+    name: auditd
+    state: restarted
+  when: not audit_log_retention_compliant
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck max_log_file_action
+  shell: |
+    grep -Pi '^\s*max_log_file_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: max_log_file_action_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck num_logs
+  shell: |
+    grep -Po '^\s*num_logs\s*=\s*\K\d+' /etc/audit/auditd.conf | tail -1
+  register: num_logs_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - >
+        (
+          max_log_file_action_verify.stdout == 'keep_logs'
+        )
+        or
+        (
+          max_log_file_action_verify.stdout == 'rotate'
+          and
+          (num_logs_verify.stdout | int) > 0
+        )
+
+    success_msg: |
+      PASS - CIS 6.2.2.2 compliant
+
+      Validation Result:
+      - Audit logs are retained
+      - Automatic deletion is not performed
+      - Rotation strategy configured
+
+      Current max_log_file_action:
+      {{ max_log_file_action_verify.stdout }}
+
+      Current num_logs:
+      {{ num_logs_verify.stdout }}
+
+      Company Standard:
+      max_log_file_action = rotate
+      num_logs > 0
+
+    fail_msg: |
+      FAIL - CIS 6.2.2.2 non-compliant
+
+      Current max_log_file_action:
+      {{ max_log_file_action_verify.stdout }}
+
+      Current num_logs:
+      {{ num_logs_verify.stdout | default('Not Configured') }}
