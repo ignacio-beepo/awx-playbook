@@ -1,0 +1,8 @@
+---
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 7 - System Maintenenace
+# ============================================================
+
+- import_tasks: 7_system_maintenance/7.1_configure_system_file_and_directory_access/main.yml
+- import_tasks: 7_system_maintenance/7.2_local_user_and_group_settings/main.yml
