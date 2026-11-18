@@ -1,0 +1,126 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd configuration file
+  stat:
+    path: /etc/audit/auditd.conf
+  register: auditd_conf
+
+- name: Get disk_full_action
+  shell: |
+    grep -Pi '^\s*disk_full_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: disk_full_action
+  changed_when: false
+  failed_when: false
+
+- name: Get disk_error_action
+  shell: |
+    grep -Pi '^\s*disk_error_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: disk_error_action
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    audit_storage_action_compliant: >-
+      {{
+        disk_full_action.stdout == 'rotate'
+        and
+        disk_error_action.stdout == 'syslog'
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Audit log handling follows company HA policy'
+        if audit_storage_action_compliant
+        else
+        'FAIL - Audit log handling does not follow company policy. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure disk_full_action
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*disk_full_action\s*='
+    line: 'disk_full_action = rotate'
+    state: present
+  when: not audit_storage_action_compliant
+
+- name: Configure disk_error_action
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*disk_error_action\s*='
+    line: 'disk_error_action = syslog'
+    state: present
+  when: not audit_storage_action_compliant
+
+- name: Restart auditd
+  systemd:
+    name: auditd
+    state: restarted
+  when: not audit_storage_action_compliant
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck disk_full_action
+  shell: |
+    grep -Pi '^\s*disk_full_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: disk_full_action_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck disk_error_action
+  shell: |
+    grep -Pi '^\s*disk_error_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: disk_error_action_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - disk_full_action_verify.stdout == 'rotate'
+      - disk_error_action_verify.stdout == 'syslog'
+
+    success_msg: |
+      PASS - CIS 6.2.2.3 compliant (Company Standard)
+
+      Validation Result:
+      - disk_full_action = rotate
+      - disk_error_action = syslog
+
+      Company Policy:
+      High Availability must be maintained.
+      Audit log exhaustion must not cause a system halt
+      or transition to single-user mode.
+
+    fail_msg: |
+      FAIL - CIS 6.2.2.3 non-compliant
+
+      Current disk_full_action:
+      {{ disk_full_action_verify.stdout }}
+
+      Current disk_error_action:
+      {{ disk_error_action_verify.stdout }}
+
+      Company Required Values:
+      disk_full_action = rotate
+      disk_error_action = syslog
