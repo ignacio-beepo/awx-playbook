@@ -1,0 +1,13 @@
+---
+- include_tasks: 7.1.1_Ensure_access_to_etc_passwd.yml
+- include_tasks: 7.1.2_Ensure_access_to_etc_passwd_dash_is_configured.yml
+- include_tasks: 7.1.3_Ensure_access_to_etc_group_is_configured.yml
+- include_tasks: 7.1.4_Ensure_access_to_etc_group_dash_is_configured.yml
+- include_tasks: 7.1.5_Ensure_access_to_etc_shadow_is_configured.yml
+- include_tasks: 7.1.6_Ensure_access_to_etc_shadow_dash_is_configured.yml
+- include_tasks: 7.1.7_Ensure_access_to_etc_gshadow_is_configured.yml
+- include_tasks: 7.1.8_Ensure_access_to_etc_gshadow_dash_is_configured.yml
+- include_tasks: 7.1.9_Ensure_access_to_etc_shells_is_configured.yml
+- include_tasks: 7.1.10_Ensure_access_to_opasswd_is_configured.yml
+- include_tasks: 7.1.11_Ensure_world_writable_files_and_directories_are_secured.yml
+- include_tasks: 7.1.12_Ensure_no_unowned_or_ungrouped_files_exist.yml
