@@ -1,0 +1,125 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd configuration exists
+  stat:
+    path: /etc/audit/auditd.conf
+  register: auditd_conf
+
+- name: Get space_left_action
+  shell: |
+    grep -Pi '^\s*space_left_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: space_left_action
+  changed_when: false
+  failed_when: false
+
+- name: Get admin_space_left_action
+  shell: |
+    grep -Pi '^\s*admin_space_left_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: admin_space_left_action
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    audit_space_policy_compliant: >-
+      {{
+        space_left_action.stdout == 'rotate'
+        and
+        admin_space_left_action.stdout == 'rotate'
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Audit low-space handling follows company HA policy'
+        if audit_space_policy_compliant
+        else
+        'FAIL - Audit low-space handling not compliant. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure space_left_action
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*space_left_action\s*='
+    line: 'space_left_action = rotate'
+    state: present
+  when: not audit_space_policy_compliant
+
+- name: Configure admin_space_left_action
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*admin_space_left_action\s*='
+    line: 'admin_space_left_action = rotate'
+    state: present
+  when: not audit_space_policy_compliant
+
+- name: Restart auditd service
+  systemd:
+    name: auditd
+    state: restarted
+  when: not audit_space_policy_compliant
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck space_left_action
+  shell: |
+    grep -Pi '^\s*space_left_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: space_left_action_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck admin_space_left_action
+  shell: |
+    grep -Pi '^\s*admin_space_left_action\s*=' /etc/audit/auditd.conf | \
+    tail -1 | awk -F= '{gsub(/[ \t]/,"",$2); print tolower($2)}'
+  register: admin_space_left_action_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - space_left_action_verify.stdout == 'rotate'
+      - admin_space_left_action_verify.stdout == 'rotate'
+
+    success_msg: |
+      PASS - CIS 6.2.2.4 compliant (Company Standard)
+
+      Validation Result:
+      - space_left_action = rotate
+      - admin_space_left_action = rotate
+
+      Company Policy:
+      Maintain service availability (HA)
+      while preserving audit log retention through rotation.
+
+    fail_msg: |
+      FAIL - CIS 6.2.2.4 non-compliant
+
+      Current space_left_action:
+      {{ space_left_action_verify.stdout }}
+
+      Current admin_space_left_action:
+      {{ admin_space_left_action_verify.stdout }}
+
+      Company Required Values:
+      space_left_action = rotate
+      admin_space_left_action = rotate
