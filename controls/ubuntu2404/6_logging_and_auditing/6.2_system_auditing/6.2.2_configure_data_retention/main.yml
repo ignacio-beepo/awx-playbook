@@ -1,2 +1,3 @@
 ---
 - include_tasks: 6.2.2.1_Ensure_audit_log_storage_size_is_configured.yml
+- include_tasks: 6.2.2.2_Ensure_audit_logs_are_not_automatically_deleted.yml
