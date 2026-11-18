@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for user emulation
+  shell: |
+    auditctl -l 2>/dev/null | grep execve || true
+  register: user_emulation_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for user emulation
+  shell: |
+    grep -Ps -- 'execve' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: user_emulation_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    user_emulation_compliant: >-
+      {{
+        (
+          '-a always,exit -F arch=b64 -C euid!=uid -F auid!=unset -S execve -k user_emulation'
+          in user_emulation_running.stdout
+        )
+        and
+        (
+          '-a always,exit -F arch=b64 -S execve -C uid!=euid -F auid!=-1 -F key=user_emulation'
+          in user_emulation_persistent.stdout
+        )
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - User emulation auditing configured'
+        if user_emulation_compliant
+        else
+        'FAIL - User emulation auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create user emulation audit rules file
+  copy:
+    dest: /etc/audit/rules.d/50-user_emulation.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -a always,exit -F arch=b64 -S execve -C uid!=euid -F auid!=-1 -F key=user_emulation
+      -a always,exit -F arch=b32 -S execve -C uid!=euid -F auid!=-1 -F key=user_emulation
+  when: not user_emulation_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not user_emulation_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not user_emulation_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep execve || true
+  register: user_emulation_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -Ps -- 'execve' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: user_emulation_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'execve' in user_emulation_running_verify.stdout"
+      - "'user_emulation' in user_emulation_running_verify.stdout"
+      - "'execve' in user_emulation_persistent_verify.stdout"
+      - "'user_emulation' in user_emulation_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.2 compliant
+
+      Validation Result:
+      - execve syscall monitored
+      - uid/euid changes monitored
+      - user_emulation audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.2 non-compliant
+
+      Running Rules:
+      {{ user_emulation_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ user_emulation_persistent_verify.stdout }}
