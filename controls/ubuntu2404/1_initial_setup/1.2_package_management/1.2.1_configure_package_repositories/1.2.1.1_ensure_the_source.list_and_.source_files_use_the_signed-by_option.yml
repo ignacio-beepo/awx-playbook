@@ -1,0 +1,50 @@
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.1.1 - Manual
+##############################################################################
+- name: Audit CIS 1.2.1.1 - APT sources use Signed-By
+  ansible.builtin.shell: |
+    python3 - <<'PYCODE'
+    from pathlib import Path
+    import re
+    files = [Path('/etc/apt/sources.list')]
+    d = Path('/etc/apt/sources.list.d')
+    if d.exists():
+        files += sorted([p for p in d.iterdir() if p.is_file() and (p.name.endswith('.list') or p.name.endswith('.sources'))])
+    findings=[]
+    for p in files:
+        if not p.exists():
+            continue
+        try: lines=p.read_text(errors='replace').splitlines()
+        except OSError: findings.append(f'{p}: unreadable'); continue
+        if p.name.endswith('.list') or p.name == 'sources.list':
+            active=[x for x in lines if x.strip() and not x.lstrip().startswith('#')]
+            for n,line in enumerate(active,1):
+                if not re.search(r'\bsigned-by\s*=', line, re.I): findings.append(f'{p}: active deb line without Signed-By: {line.strip()}')
+        else:
+            # Deb822: each stanza with URIs is an active source stanza.
+            stanzas=re.split(r'\n\s*\n', '\n'.join(lines))
+            for i,stanza in enumerate(stanzas,1):
+                active=[x for x in stanza.splitlines() if x.strip() and not x.lstrip().startswith('#')]
+                if any(re.match(r'\s*URIs\s*:',x,re.I) for x in active) and not any(re.match(r'\s*Signed-By\s*:',x,re.I) for x in active):
+                    findings.append(f'{p}: stanza {i} has URIs but no Signed-By')
+    print('\n'.join(findings) if findings else 'NO_FINDINGS')
+    PYCODE
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_1_audit
+  changed_when: false
+  failed_when: false
+- name: Report CIS 1.2.1.1 result
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'MANUAL REVIEW REQUIRED - no missing Signed-By entries detected by the local parser; confirm repository policy and keyring paths.'
+         if 'NO_FINDINGS' in cis_1_2_1_1_audit.stdout else
+         'MANUAL REVIEW REQUIRED - review the following APT source entries and configure Signed-By according to site policy: ' ~ cis_1_2_1_1_audit.stdout }}
+- name: CIS 1.2.1.1 remediation guidance
+  ansible.builtin.debug:
+    msg: >-
+      Manual remediation only: update /etc/apt/sources.list and active .list/.sources
+      entries under /etc/apt/sources.list.d to specify the approved absolute keyring
+      path using Signed-By/signed-by. Do not automatically rewrite repository definitions.
+  when: cis_remediate | default(false) | bool

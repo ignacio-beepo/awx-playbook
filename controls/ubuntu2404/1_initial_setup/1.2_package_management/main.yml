@@ -1,0 +1,3 @@
+---
+- ansible.builtin.import_tasks: 1.2.1_configure_package_repositories/main.yml
+- ansible.builtin.import_tasks: 1.2.2_configure_package_updates/main.yml

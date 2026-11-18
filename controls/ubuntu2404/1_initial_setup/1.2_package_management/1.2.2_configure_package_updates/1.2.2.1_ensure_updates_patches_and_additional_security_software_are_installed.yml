@@ -1,0 +1,32 @@
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.2.1 - Manual
+# This item intentionally does not run apt upgrade or install packages.
+##############################################################################
+- name: Refresh APT package metadata for CIS 1.2.2.1 audit
+  ansible.builtin.command: apt-get update
+  register: cis_1_2_2_1_apt_update
+  changed_when: false
+  failed_when: false
+- name: Simulate available package upgrades for CIS 1.2.2.1
+  ansible.builtin.command: apt-get -s upgrade
+  register: cis_1_2_2_1_upgrade_simulation
+  changed_when: false
+  failed_when: false
+- name: Check whether a reboot is required for CIS 1.2.2.1
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: cis_1_2_2_1_reboot_required
+- name: Report CIS 1.2.2.1 manual review findings
+  ansible.builtin.debug:
+    msg: |
+      MANUAL REVIEW REQUIRED - CIS 1.2.2.1
+      APT update return code: {{ cis_1_2_2_1_apt_update.rc | default('not run') }}
+      Upgrade simulation return code: {{ cis_1_2_2_1_upgrade_simulation.rc | default('unknown') }}
+      Reboot required: {{ cis_1_2_2_1_reboot_required.stat.exists | default(false) }}
+      Review the apt-get -s upgrade output below and follow the organization's patch
+      approval, testing, maintenance-window, and reboot procedures. This task does not
+      install upgrades automatically because the benchmark marks this recommendation Manual.
+      Simulation output:
+      {{ cis_1_2_2_1_upgrade_simulation.stdout | default('No simulation output') }}
+      {{ cis_1_2_2_1_upgrade_simulation.stderr | default('') }}

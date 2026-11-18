@@ -1,0 +1,76 @@
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.1.4 - Automated
+##############################################################################
+- name: Audit CIS 1.2.1.4 - access to trusted.gpg.d directory
+  ansible.builtin.shell: |
+    python3 - <<'PYCODE'
+    from pathlib import Path
+    import os, stat
+    paths = [Path('/etc/apt/trusted.gpg.d')] if Path('/etc/apt/trusted.gpg.d').exists() else []
+    bad=[]
+    if not Path('/etc/apt/trusted.gpg.d').exists(): bad.append('MISSING: /etc/apt/trusted.gpg.d')
+    for p in paths:
+        try:
+            s=p.stat(); mode=stat.S_IMODE(s.st_mode)
+            if s.st_uid != 0 or s.st_gid != 0 or (mode & int('0022',8)) != 0:
+                bad.append(f"{p} mode={mode:04o} uid={s.st_uid} gid={s.st_gid}")
+        except OSError as e: bad.append(f"{p}: {e}")
+    print('\n'.join(bad) if bad else 'NO_FINDINGS')
+    PYCODE
+  args: { executable: /bin/bash }
+  register: cis_1_2_1_4_audit
+  changed_when: false
+  failed_when: false
+- name: Determine CIS 1.2.1.4 compliance
+  ansible.builtin.set_fact:
+    cis_1_2_1_4_compliant: "{{ 'NO_FINDINGS' in cis_1_2_1_4_audit.stdout }}"
+- name: Report CIS 1.2.1.4 audit result
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'PASS - 1.2.1.4 compliant' if cis_1_2_1_4_compliant else
+         'FAIL - 1.2.1.4 non-compliant: ' ~ cis_1_2_1_4_audit.stdout }}
+- name: Remediate CIS 1.2.1.4 ownership and permissions
+  ansible.builtin.shell: |
+    python3 - <<'PYCODE'
+    from pathlib import Path
+    import os
+    paths = [Path('/etc/apt/trusted.gpg.d')] if Path('/etc/apt/trusted.gpg.d').exists() else []
+    if 'dir' == 'dir': Path('/etc/apt/trusted.gpg.d').mkdir(parents=True, exist_ok=True)
+    for p in paths:
+        os.chown(p, 0, 0)
+        os.chmod(p, int('0755', 8))
+    PYCODE
+  args: { executable: /bin/bash }
+  register: cis_1_2_1_4_remediation
+  changed_when: false
+  when:
+    - not cis_1_2_1_4_compliant
+    - cis_remediate | default(false) | bool
+- name: Re-audit CIS 1.2.1.4
+  ansible.builtin.shell: |
+    python3 - <<'PYCODE'
+    from pathlib import Path
+    import stat
+    paths = [Path('/etc/apt/trusted.gpg.d')] if Path('/etc/apt/trusted.gpg.d').exists() else []
+    bad=[]
+    if not Path('/etc/apt/trusted.gpg.d').exists(): bad.append('MISSING: /etc/apt/trusted.gpg.d')
+    for p in paths:
+        try:
+            s=p.stat(); mode=stat.S_IMODE(s.st_mode)
+            if s.st_uid != 0 or s.st_gid != 0 or (mode & int('0022',8)) != 0:
+                bad.append(f"{p} mode={mode:04o} uid={s.st_uid} gid={s.st_gid}")
+        except OSError as e: bad.append(f"{p}: {e}")
+    print('\n'.join(bad) if bad else 'NO_FINDINGS')
+    PYCODE
+  args: { executable: /bin/bash }
+  register: cis_1_2_1_4_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Final CIS validation 1.2.1.4
+  ansible.builtin.assert:
+    that:
+      - cis_1_2_1_4_compliant or ((cis_remediate | default(false) | bool) and 'NO_FINDINGS' in cis_1_2_1_4_verify.stdout)
+    success_msg: 'PASS - CIS 1.2.1.4 compliant'
+    fail_msg: 'FAIL - CIS 1.2.1.4 remains non-compliant'

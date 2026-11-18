@@ -1,17 +1,17 @@
 ---
 # ============================================================
 # CIS Ubuntu 24.04 LTS Benchmark
-# Section 1.1.1 - Configure Filesystem Kernel Modules
+# Section 1.1 - Filesystem
 # ============================================================
 
-- import_tasks: 1_initial_setup/1.1_filesystem/1.1.1_configure_filesystem_kernel_modules/main.yml
+- ansible.builtin.import_tasks: 1_initial_setup/1.1_filesystem/main.yml
 
 # ============================================================
 # CIS Ubuntu 24.04 LTS Benchmark
-# Section 1.1.1 - Configure Filesystem Kernel Modules
+# Section 1.2 - Package Management
 # ============================================================
 
-- import_tasks: 1_initial_setup/1.1_filesystem/1.1.2_configure_filesystem_partitions/main.yml
+- ansible.builtin.import_tasks: 1_initial_setup/1.2_package_management/main.yml
 # ============================================================
 # OLD Configuration
 # ============================================================

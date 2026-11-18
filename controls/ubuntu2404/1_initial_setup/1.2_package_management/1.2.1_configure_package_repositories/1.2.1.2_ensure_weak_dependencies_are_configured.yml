@@ -1,0 +1,47 @@
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.1.2 - Automated
+##############################################################################
+- name: Audit CIS 1.2.1.2 - APT weak dependencies
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/bin/apt-config dump | /usr/bin/grep -E '^APT::Install-(Recommends|Suggests) '
+  args: { executable: /bin/bash }
+  register: cis_1_2_1_2_audit
+  changed_when: false
+  failed_when: false
+- name: Determine CIS 1.2.1.2 compliance
+  ansible.builtin.set_fact:
+    cis_1_2_1_2_compliant: >-
+      {{ 'APT::Install-Recommends "0";' in cis_1_2_1_2_audit.stdout and
+         'APT::Install-Suggests "0";' in cis_1_2_1_2_audit.stdout }}
+- name: Report CIS 1.2.1.2 audit result
+  ansible.builtin.debug:
+    msg: >-
+      {{ 'PASS - APT weak dependencies are disabled' if cis_1_2_1_2_compliant else
+         'FAIL - APT weak dependency settings do not match the required values. Current output: ' ~ (cis_1_2_1_2_audit.stdout | default('No explicit settings found')) }}
+- name: Remediate CIS 1.2.1.2 - disable weak dependencies
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/60-no-weak-dependencies
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      APT::Install-Recommends "0";
+      APT::Install-Suggests "0";
+  when:
+    - not cis_1_2_1_2_compliant
+    - cis_remediate | default(false) | bool
+- name: Re-audit CIS 1.2.1.2
+  ansible.builtin.shell: |
+    /usr/bin/apt-config dump | /usr/bin/grep -E '^APT::Install-(Recommends|Suggests) '
+  register: cis_1_2_1_2_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+- name: Final CIS validation 1.2.1.2
+  ansible.builtin.assert:
+    that:
+      - cis_1_2_1_2_compliant or ((cis_remediate | default(false) | bool) and 'APT::Install-Recommends "0";' in cis_1_2_1_2_verify.stdout and 'APT::Install-Suggests "0";' in cis_1_2_1_2_verify.stdout)
+    success_msg: 'PASS - CIS 1.2.1.2 compliant'
+    fail_msg: 'FAIL - CIS 1.2.1.2 remains non-compliant'

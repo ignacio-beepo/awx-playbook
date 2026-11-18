@@ -1,0 +1,3 @@
+---
+- ansible.builtin.import_tasks: 1.1.1_configure_filesystem_kernel_modules/main.yml
+- ansible.builtin.import_tasks: 1.1.2_configure_filesystem_partitions/main.yml
