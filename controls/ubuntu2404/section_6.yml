@@ -4,5 +4,6 @@
 # Section 7 - System Maintenenace
 # ============================================================
 
-- import_tasks: 6_logging_and_auditing/6.2_system_auditing/6.2.1_configure_auditd_service/main.yml
+- import_tasks: 6_logging_and_auditing/6.2_system_auditing/6.2.2_configure_data_retention/main.yml
+# - import_tasks: 6_logging_and_auditing/6.2_system_auditing/6.2.1_configure_auditd_service/main.yml
 # - import_tasks: 6_logging_and_auditing/6.3_configure_integrity_checking/main.yml
