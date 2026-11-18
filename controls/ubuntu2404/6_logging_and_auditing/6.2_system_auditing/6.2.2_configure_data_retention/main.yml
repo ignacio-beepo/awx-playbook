@@ -1,0 +1,1 @@
+- include_tasks: 6.2.2.1_Ensure_audit_log_storage_size_is_configured.yml
