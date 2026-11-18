@@ -1,0 +1,135 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check sudo logfile configuration
+  shell: |
+    grep -rPsi \
+    '^\h*Defaults\h+([^#]+,\h*)?logfile\h*=\h*("|'\'')?\H+("|'\'')?(,\h*\H+\h*)*\h*(#.*)?$' \
+    /etc/sudoers /etc/sudoers.d 2>/dev/null || true
+  register: sudo_logfile_config
+  changed_when: false
+  failed_when: false
+
+- name: Check running audit rules for sudo log file
+  shell: |
+    auditctl -l 2>/dev/null | grep sudo.log || true
+  register: sudo_log_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for sudo log file
+  shell: |
+    grep -Ps -- 'sudo.log' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: sudo_log_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    sudo_log_compliant: >-
+      {{
+        ('/var/log/sudo.log' in sudo_logfile_config.stdout)
+        and
+        ('-w /var/log/sudo.log -p wa -k sudo_log_file'
+          in sudo_log_running.stdout)
+        and
+        ('-w /var/log/sudo.log -p wa -k sudo_log_file'
+          in sudo_log_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Sudo log auditing configured'
+        if sudo_log_compliant
+        else
+        'FAIL - Sudo log auditing not configured. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure sudo logfile
+  copy:
+    dest: /etc/sudoers.d/99-sudo-logfile
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      Defaults logfile="/var/log/sudo.log"
+  when: not sudo_log_compliant
+
+- name: Ensure sudo logfile exists
+  file:
+    path: /var/log/sudo.log
+    state: touch
+    owner: root
+    group: root
+    mode: "0600"
+  when: not sudo_log_compliant
+
+- name: Create sudo logfile audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-sudo.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /var/log/sudo.log -p wa -k sudo_log_file
+  when: not sudo_log_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not sudo_log_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not sudo_log_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck sudo logfile configuration
+  shell: |
+    grep -rPsi \
+    '^\h*Defaults\h+([^#]+,\h*)?logfile\h*=' \
+    /etc/sudoers /etc/sudoers.d 2>/dev/null || true
+  register: sudo_logfile_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep sudo.log || true
+  register: sudo_log_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -Ps -- 'sudo.log' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: sudo_log_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+######################################
