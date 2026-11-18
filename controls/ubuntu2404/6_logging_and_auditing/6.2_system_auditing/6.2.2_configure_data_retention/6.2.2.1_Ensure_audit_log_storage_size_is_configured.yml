@@ -1,0 +1,93 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check auditd configuration file
+  stat:
+    path: /etc/audit/auditd.conf
+  register: auditd_conf
+
+- name: Get configured max_log_file value
+  shell: |
+    grep -Po '^\h*max_log_file\h*=\h*\K\d+' /etc/audit/auditd.conf | head -1
+  register: max_log_file_value
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    max_log_file_compliant: >-
+      {{
+        (max_log_file_value.stdout | default('0') | int) >= 10
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - max_log_file meets company requirement'
+        if max_log_file_compliant
+        else
+        'FAIL - max_log_file below company requirement. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Configure max_log_file
+  lineinfile:
+    path: /etc/audit/auditd.conf
+    regexp: '^\s*max_log_file\s*='
+    line: 'max_log_file = 10'
+    state: present
+  when: not max_log_file_compliant
+
+- name: Restart auditd service
+  systemd:
+    name: auditd
+    state: restarted
+  when: not max_log_file_compliant
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck max_log_file value
+  shell: |
+    grep -Po '^\h*max_log_file\h*=\h*\K\d+' /etc/audit/auditd.conf | head -1
+  register: max_log_file_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - (max_log_file_verify.stdout | int) >= 10
+
+    success_msg: |
+      PASS - CIS 6.2.2.1 compliant
+
+      Validation Result:
+      - max_log_file configured
+
+      Current Value:
+      {{ max_log_file_verify.stdout }}
+
+      Company Requirement:
+      >= 10
+
+    fail_msg: |
+      FAIL - CIS 6.2.2.1 non-compliant
+
+      Current Value:
+      {{ max_log_file_verify.stdout | default('Not Configured') }}
+
+      Required Value:
+      >= 10
