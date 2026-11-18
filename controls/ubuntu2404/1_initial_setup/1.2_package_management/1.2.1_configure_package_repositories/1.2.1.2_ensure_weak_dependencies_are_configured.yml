@@ -1,47 +1,64 @@
+---
 ##############################################################################
 # CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
-# CIS 1.2.1.2 - Automated
+# CIS 1.2.1.2 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported and does not fail the Ansible task.
 ##############################################################################
-- name: Audit CIS 1.2.1.2 - APT weak dependencies
+
+- name: Audit CIS 1.2.1.2
   ansible.builtin.shell: |
-    set -o pipefail
-    /usr/bin/apt-config dump | /usr/bin/grep -E '^APT::Install-(Recommends|Suggests) '
-  args: { executable: /bin/bash }
+    cfg="$(apt-config dump 2>/dev/null || true)"
+    r="$(grep -E '^APT::Install-Recommends "0";' <<< "$cfg" >/dev/null && echo false || echo true)"
+    s="$(grep -E '^APT::Install-Suggests "0";' <<< "$cfg" >/dev/null && echo false || echo true)"
+    if [ "$r" = "false" ] && [ "$s" = "false" ]; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+    echo "Install-Recommends=${r:-default}; Install-Suggests=${s:-default}"
+  args:
+    executable: /bin/bash
   register: cis_1_2_1_2_audit
   changed_when: false
   failed_when: false
-- name: Determine CIS 1.2.1.2 compliance
+- name: Determine compliance status for CIS 1.2.1.2
   ansible.builtin.set_fact:
-    cis_1_2_1_2_compliant: >-
-      {{ 'APT::Install-Recommends "0";' in cis_1_2_1_2_audit.stdout and
-         'APT::Install-Suggests "0";' in cis_1_2_1_2_audit.stdout }}
-- name: Report CIS 1.2.1.2 audit result
+    cis_1_2_1_2_compliant: "{{ (cis_1_2_1_2_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+
+- name: Show audit result for CIS 1.2.1.2
   ansible.builtin.debug:
-    msg: >-
-      {{ 'PASS - APT weak dependencies are disabled' if cis_1_2_1_2_compliant else
-         'FAIL - APT weak dependency settings do not match the required values. Current output: ' ~ (cis_1_2_1_2_audit.stdout | default('No explicit settings found')) }}
-- name: Remediate CIS 1.2.1.2 - disable weak dependencies
+    msg: "{{ 'PASS' if cis_1_2_1_2_compliant else 'NON-COMPLIANT' }} - CIS 1.2.1.2: {{ cis_1_2_1_2_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.2.1.2 - disable weak APT dependencies
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/60-no-weak-dependencies
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
     content: |
       APT::Install-Recommends "0";
       APT::Install-Suggests "0";
-  when:
-    - not cis_1_2_1_2_compliant
-    - cis_remediate | default(false) | bool
-- name: Re-audit CIS 1.2.1.2
+  when: not cis_1_2_1_2_compliant and (cis_remediate | default(false) | bool)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.2.1.2
   ansible.builtin.shell: |
-    /usr/bin/apt-config dump | /usr/bin/grep -E '^APT::Install-(Recommends|Suggests) '
+    cfg="$(apt-config dump 2>/dev/null || true)"
+    r="$(grep -E '^APT::Install-Recommends "0";' <<< "$cfg" >/dev/null && echo false || echo true)"
+    s="$(grep -E '^APT::Install-Suggests "0";' <<< "$cfg" >/dev/null && echo false || echo true)"
+    if [ "$r" = "false" ] && [ "$s" = "false" ]; then echo COMPLIANT; else echo NON_COMPLIANT; fi
+    echo "Install-Recommends=${r:-default}; Install-Suggests=${s:-default}"
+  args:
+    executable: /bin/bash
   register: cis_1_2_1_2_verify
   changed_when: false
   failed_when: false
   when: cis_remediate | default(false) | bool
-- name: Final CIS validation 1.2.1.2
-  ansible.builtin.assert:
-    that:
-      - cis_1_2_1_2_compliant or ((cis_remediate | default(false) | bool) and 'APT::Install-Recommends "0";' in cis_1_2_1_2_verify.stdout and 'APT::Install-Suggests "0";' in cis_1_2_1_2_verify.stdout)
-    success_msg: 'PASS - CIS 1.2.1.2 compliant'
-    fail_msg: 'FAIL - CIS 1.2.1.2 remains non-compliant'
+
+- name: Show recheck result for CIS 1.2.1.2
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if ((cis_1_2_1_2_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT') else 'NON-COMPLIANT / REVIEW' }} - CIS 1.2.1.2: {{ cis_1_2_1_2_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool

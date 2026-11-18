@@ -1,2 +1,5 @@
 ---
-- ansible.builtin.import_tasks: 1.2.2.1_ensure_updates_patches_and_additional_security_software_are_installed.yml
+- name: Include CIS section controls
+  ansible.builtin.include_tasks: "{{ item }}"
+  loop:
+  - 1.2.2.1_ensure_updates_patches_and_additional_security_software_are_installed.yml

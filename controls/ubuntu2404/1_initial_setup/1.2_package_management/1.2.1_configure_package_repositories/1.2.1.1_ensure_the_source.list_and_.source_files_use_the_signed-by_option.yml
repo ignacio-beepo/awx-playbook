@@ -1,50 +1,102 @@
+---
 ##############################################################################
 # CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
-# CIS 1.2.1.1 - Manual
+# CIS 1.2.1.1 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported and does not fail the Ansible task.
 ##############################################################################
-- name: Audit CIS 1.2.1.1 - APT sources use Signed-By
+
+- name: Audit CIS 1.2.1.1
   ansible.builtin.shell: |
-    python3 - <<'PYCODE'
-    from pathlib import Path
-    import re
-    files = [Path('/etc/apt/sources.list')]
-    d = Path('/etc/apt/sources.list.d')
-    if d.exists():
-        files += sorted([p for p in d.iterdir() if p.is_file() and (p.name.endswith('.list') or p.name.endswith('.sources'))])
-    findings=[]
-    for p in files:
-        if not p.exists():
-            continue
-        try: lines=p.read_text(errors='replace').splitlines()
-        except OSError: findings.append(f'{p}: unreadable'); continue
-        if p.name.endswith('.list') or p.name == 'sources.list':
-            active=[x for x in lines if x.strip() and not x.lstrip().startswith('#')]
-            for n,line in enumerate(active,1):
-                if not re.search(r'\bsigned-by\s*=', line, re.I): findings.append(f'{p}: active deb line without Signed-By: {line.strip()}')
-        else:
-            # Deb822: each stanza with URIs is an active source stanza.
-            stanzas=re.split(r'\n\s*\n', '\n'.join(lines))
-            for i,stanza in enumerate(stanzas,1):
-                active=[x for x in stanza.splitlines() if x.strip() and not x.lstrip().startswith('#')]
-                if any(re.match(r'\s*URIs\s*:',x,re.I) for x in active) and not any(re.match(r'\s*Signed-By\s*:',x,re.I) for x in active):
-                    findings.append(f'{p}: stanza {i} has URIs but no Signed-By')
-    print('\n'.join(findings) if findings else 'NO_FINDINGS')
-    PYCODE
+    python3 - <<'PY'
+    import glob,os,re
+    paths=["/etc/apt/sources.list"]+glob.glob("/etc/apt/sources.list.d/*.list")+glob.glob("/etc/apt/sources.list.d/*.sources")
+    bad=[]; n=0
+    for p in paths:
+     if not os.path.isfile(p): continue
+     data=open(p,encoding="utf-8",errors="replace").read()
+     if p.endswith(".sources"):
+      for i,st in enumerate(re.split(r"\n\s*\n",data),1):
+       f={}
+       for l in st.splitlines():
+        if l and not l[0].isspace() and ":" in l:
+         k,v=l.split(":",1); f[k.strip().lower()]=v.strip()
+       if f and f.get("enabled","yes").lower()!="no" and ("uris" in f or "types" in f):
+        n+=1
+        if not f.get("signed-by"): bad.append(f"{p}: stanza {i} missing Signed-By")
+     else:
+      for i,l in enumerate(data.splitlines(),1):
+       s=l.strip()
+       if not s or s.startswith("#") or not re.match(r"^deb(?:-src)?\s",s): continue
+       n+=1; m=re.match(r"^deb(?:-src)?\s+\[([^\]]*)\]",s)
+       if not m or not re.search(r"(^|\s)signed-by\s*=",m.group(1),re.I): bad.append(f"{p}:{i} missing Signed-By")
+    if bad: print("NON_COMPLIANT"); print("; ".join(bad))
+    elif n: print("COMPLIANT"); print(f"{n} active APT entries have Signed-By")
+    else: print("REVIEW_REQUIRED"); print("No active source entries found")
+    PY
   args:
     executable: /bin/bash
   register: cis_1_2_1_1_audit
   changed_when: false
   failed_when: false
-- name: Report CIS 1.2.1.1 result
+- name: Record manual review status for CIS 1.2.1.1
+  ansible.builtin.set_fact:
+    cis_1_2_1_1_compliant: "{{ (cis_1_2_1_1_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+    cis_1_2_1_1_manual_review: true
+
+- name: Show audit result for CIS 1.2.1.1
+  ansible.builtin.debug:
+    msg: "MANUAL REVIEW - CIS 1.2.1.1: {{ cis_1_2_1_1_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Manual remediation notice for CIS 1.2.1.1
   ansible.builtin.debug:
     msg: >-
-      {{ 'MANUAL REVIEW REQUIRED - no missing Signed-By entries detected by the local parser; confirm repository policy and keyring paths.'
-         if 'NO_FINDINGS' in cis_1_2_1_1_audit.stdout else
-         'MANUAL REVIEW REQUIRED - review the following APT source entries and configure Signed-By according to site policy: ' ~ cis_1_2_1_1_audit.stdout }}
-- name: CIS 1.2.1.1 remediation guidance
+      Assign an approved repository-specific keyring and add Signed-By to each active .list/.sources entry. This is intentionally not guessed or modified automatically.
+  when: cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.2.1.1
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import glob,os,re
+    paths=["/etc/apt/sources.list"]+glob.glob("/etc/apt/sources.list.d/*.list")+glob.glob("/etc/apt/sources.list.d/*.sources")
+    bad=[]; n=0
+    for p in paths:
+     if not os.path.isfile(p): continue
+     data=open(p,encoding="utf-8",errors="replace").read()
+     if p.endswith(".sources"):
+      for i,st in enumerate(re.split(r"\n\s*\n",data),1):
+       f={}
+       for l in st.splitlines():
+        if l and not l[0].isspace() and ":" in l:
+         k,v=l.split(":",1); f[k.strip().lower()]=v.strip()
+       if f and f.get("enabled","yes").lower()!="no" and ("uris" in f or "types" in f):
+        n+=1
+        if not f.get("signed-by"): bad.append(f"{p}: stanza {i} missing Signed-By")
+     else:
+      for i,l in enumerate(data.splitlines(),1):
+       s=l.strip()
+       if not s or s.startswith("#") or not re.match(r"^deb(?:-src)?\s",s): continue
+       n+=1; m=re.match(r"^deb(?:-src)?\s+\[([^\]]*)\]",s)
+       if not m or not re.search(r"(^|\s)signed-by\s*=",m.group(1),re.I): bad.append(f"{p}:{i} missing Signed-By")
+    if bad: print("NON_COMPLIANT"); print("; ".join(bad))
+    elif n: print("COMPLIANT"); print(f"{n} active APT entries have Signed-By")
+    else: print("REVIEW_REQUIRED"); print("No active source entries found")
+    PY
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_1_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Show recheck result for CIS 1.2.1.1
   ansible.builtin.debug:
-    msg: >-
-      Manual remediation only: update /etc/apt/sources.list and active .list/.sources
-      entries under /etc/apt/sources.list.d to specify the approved absolute keyring
-      path using Signed-By/signed-by. Do not automatically rewrite repository definitions.
+    msg: "{{ 'PASS' if ((cis_1_2_1_1_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT') else 'NON-COMPLIANT / REVIEW' }} - CIS 1.2.1.1: {{ cis_1_2_1_1_verify.stdout | default('Recheck not run') }}"
   when: cis_remediate | default(false) | bool

@@ -1,76 +1,69 @@
+---
 ##############################################################################
 # CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
-# CIS 1.2.1.7 - Automated
+# CIS 1.2.1.7 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported and does not fail the Ansible task.
 ##############################################################################
-- name: Audit CIS 1.2.1.7 - access to usr share keyrings directory
+
+- name: Audit CIS 1.2.1.7
   ansible.builtin.shell: |
-    python3 - <<'PYCODE'
-    from pathlib import Path
-    import os, stat
-    paths = [Path('/usr/share/keyrings')] if Path('/usr/share/keyrings').exists() else []
-    bad=[]
-    if not Path('/usr/share/keyrings').exists(): bad.append('MISSING: /usr/share/keyrings')
-    for p in paths:
-        try:
-            s=p.stat(); mode=stat.S_IMODE(s.st_mode)
-            if s.st_uid != 0 or s.st_gid != 0 or (mode & int('0022',8)) != 0:
-                bad.append(f"{p} mode={mode:04o} uid={s.st_uid} gid={s.st_gid}")
-        except OSError as e: bad.append(f"{p}: {e}")
-    print('\n'.join(bad) if bad else 'NO_FINDINGS')
-    PYCODE
-  args: { executable: /bin/bash }
+    python3 - <<'PY'
+    import os,stat
+    p="/usr/share/keyrings"
+    try:
+     s=os.stat(p); m=stat.S_IMODE(s.st_mode)
+     if os.path.isdir(p) and s.st_uid==0 and s.st_gid==0 and not(m&0o022): print("COMPLIANT"); print(f"owner=root:root mode={m:04o}")
+     else: print("NON_COMPLIANT"); print(f"owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    except Exception as e: print("NON_COMPLIANT"); print(str(e))
+    PY
+  args:
+    executable: /bin/bash
   register: cis_1_2_1_7_audit
   changed_when: false
   failed_when: false
-- name: Determine CIS 1.2.1.7 compliance
+- name: Determine compliance status for CIS 1.2.1.7
   ansible.builtin.set_fact:
-    cis_1_2_1_7_compliant: "{{ 'NO_FINDINGS' in cis_1_2_1_7_audit.stdout }}"
-- name: Report CIS 1.2.1.7 audit result
+    cis_1_2_1_7_compliant: "{{ (cis_1_2_1_7_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+
+- name: Show audit result for CIS 1.2.1.7
   ansible.builtin.debug:
-    msg: >-
-      {{ 'PASS - 1.2.1.7 compliant' if cis_1_2_1_7_compliant else
-         'FAIL - 1.2.1.7 non-compliant: ' ~ cis_1_2_1_7_audit.stdout }}
-- name: Remediate CIS 1.2.1.7 ownership and permissions
+    msg: "{{ 'PASS' if cis_1_2_1_7_compliant else 'NON-COMPLIANT' }} - CIS 1.2.1.7: {{ cis_1_2_1_7_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.2.1.7 - set ownership and permissions
   ansible.builtin.shell: |
-    python3 - <<'PYCODE'
-    from pathlib import Path
-    import os
-    paths = [Path('/usr/share/keyrings')] if Path('/usr/share/keyrings').exists() else []
-    if 'dir' == 'dir': Path('/usr/share/keyrings').mkdir(parents=True, exist_ok=True)
-    for p in paths:
-        os.chown(p, 0, 0)
-        os.chmod(p, int('0755', 8))
-    PYCODE
-  args: { executable: /bin/bash }
-  register: cis_1_2_1_7_remediation
-  changed_when: false
-  when:
-    - not cis_1_2_1_7_compliant
-    - cis_remediate | default(false) | bool
-- name: Re-audit CIS 1.2.1.7
+    chown root:root /usr/share/keyrings && chmod 0755 /usr/share/keyrings
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not cis_1_2_1_7_compliant and (cis_remediate | default(false) | bool)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.2.1.7
   ansible.builtin.shell: |
-    python3 - <<'PYCODE'
-    from pathlib import Path
-    import stat
-    paths = [Path('/usr/share/keyrings')] if Path('/usr/share/keyrings').exists() else []
-    bad=[]
-    if not Path('/usr/share/keyrings').exists(): bad.append('MISSING: /usr/share/keyrings')
-    for p in paths:
-        try:
-            s=p.stat(); mode=stat.S_IMODE(s.st_mode)
-            if s.st_uid != 0 or s.st_gid != 0 or (mode & int('0022',8)) != 0:
-                bad.append(f"{p} mode={mode:04o} uid={s.st_uid} gid={s.st_gid}")
-        except OSError as e: bad.append(f"{p}: {e}")
-    print('\n'.join(bad) if bad else 'NO_FINDINGS')
-    PYCODE
-  args: { executable: /bin/bash }
+    python3 - <<'PY'
+    import os,stat
+    p="/usr/share/keyrings"
+    try:
+     s=os.stat(p); m=stat.S_IMODE(s.st_mode)
+     if os.path.isdir(p) and s.st_uid==0 and s.st_gid==0 and not(m&0o022): print("COMPLIANT"); print(f"owner=root:root mode={m:04o}")
+     else: print("NON_COMPLIANT"); print(f"owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    except Exception as e: print("NON_COMPLIANT"); print(str(e))
+    PY
+  args:
+    executable: /bin/bash
   register: cis_1_2_1_7_verify
   changed_when: false
   failed_when: false
   when: cis_remediate | default(false) | bool
-- name: Final CIS validation 1.2.1.7
-  ansible.builtin.assert:
-    that:
-      - cis_1_2_1_7_compliant or ((cis_remediate | default(false) | bool) and 'NO_FINDINGS' in cis_1_2_1_7_verify.stdout)
-    success_msg: 'PASS - CIS 1.2.1.7 compliant'
-    fail_msg: 'FAIL - CIS 1.2.1.7 remains non-compliant'
+
+- name: Show recheck result for CIS 1.2.1.7
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if ((cis_1_2_1_7_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT') else 'NON-COMPLIANT / REVIEW' }} - CIS 1.2.1.7: {{ cis_1_2_1_7_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool

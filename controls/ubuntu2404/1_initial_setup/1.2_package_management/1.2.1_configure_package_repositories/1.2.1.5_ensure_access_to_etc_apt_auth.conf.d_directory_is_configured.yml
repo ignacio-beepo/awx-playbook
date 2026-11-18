@@ -1,0 +1,69 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.1.5 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported and does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.2.1.5
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import os,stat
+    p="/etc/apt/auth.conf.d"
+    try:
+     s=os.stat(p); m=stat.S_IMODE(s.st_mode)
+     if os.path.isdir(p) and s.st_uid==0 and s.st_gid==0 and not(m&0o022): print("COMPLIANT"); print(f"owner=root:root mode={m:04o}")
+     else: print("NON_COMPLIANT"); print(f"owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    except Exception as e: print("NON_COMPLIANT"); print(str(e))
+    PY
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_5_audit
+  changed_when: false
+  failed_when: false
+- name: Determine compliance status for CIS 1.2.1.5
+  ansible.builtin.set_fact:
+    cis_1_2_1_5_compliant: "{{ (cis_1_2_1_5_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+
+- name: Show audit result for CIS 1.2.1.5
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_2_1_5_compliant else 'NON-COMPLIANT' }} - CIS 1.2.1.5: {{ cis_1_2_1_5_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.2.1.5 - set ownership and permissions
+  ansible.builtin.shell: |
+    chown root:root /etc/apt/auth.conf.d && chmod 0755 /etc/apt/auth.conf.d
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not cis_1_2_1_5_compliant and (cis_remediate | default(false) | bool)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.2.1.5
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import os,stat
+    p="/etc/apt/auth.conf.d"
+    try:
+     s=os.stat(p); m=stat.S_IMODE(s.st_mode)
+     if os.path.isdir(p) and s.st_uid==0 and s.st_gid==0 and not(m&0o022): print("COMPLIANT"); print(f"owner=root:root mode={m:04o}")
+     else: print("NON_COMPLIANT"); print(f"owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    except Exception as e: print("NON_COMPLIANT"); print(str(e))
+    PY
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_5_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Show recheck result for CIS 1.2.1.5
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if ((cis_1_2_1_5_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT') else 'NON-COMPLIANT / REVIEW' }} - CIS 1.2.1.5: {{ cis_1_2_1_5_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool

@@ -1,0 +1,77 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 1.2.1.6 | Assessment -> Remediation -> Recheck
+# Non-compliance is reported and does not fail the Ansible task.
+##############################################################################
+
+- name: Audit CIS 1.2.1.6
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import os,stat
+    p="/etc/apt/auth.conf.d"; lim=int("0640",8); bad=[]; n=0
+    if os.path.isdir(p):
+     for x in os.listdir(p):
+      f=os.path.join(p,x); s=os.stat(f,follow_symlinks=False)
+      if stat.S_ISREG(s.st_mode):
+       n+=1; m=stat.S_IMODE(s.st_mode)
+       if s.st_uid!=0 or s.st_gid!=0 or m&~lim: bad.append(f"{f} owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    else: bad.append("directory missing")
+    if bad: print("NON_COMPLIANT"); print("; ".join(bad))
+    else: print("COMPLIANT"); print(f"{n} files satisfy root:root and mode 0640 or stricter")
+    PY
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_6_audit
+  changed_when: false
+  failed_when: false
+- name: Determine compliance status for CIS 1.2.1.6
+  ansible.builtin.set_fact:
+    cis_1_2_1_6_compliant: "{{ (cis_1_2_1_6_audit.stdout_lines | default([]) | first | default('')) == 'COMPLIANT' }}"
+
+- name: Show audit result for CIS 1.2.1.6
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if cis_1_2_1_6_compliant else 'NON-COMPLIANT' }} - CIS 1.2.1.6: {{ cis_1_2_1_6_audit.stdout | default('No audit output') }}"
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediate CIS 1.2.1.6 - set ownership and permissions
+  ansible.builtin.shell: |
+    find /etc/apt/auth.conf.d -maxdepth 1 -type f -exec chown root:root {} + -exec chmod 0640 {} +
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: not cis_1_2_1_6_compliant and (cis_remediate | default(false) | bool)
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck CIS 1.2.1.6
+  ansible.builtin.shell: |
+    python3 - <<'PY'
+    import os,stat
+    p="/etc/apt/auth.conf.d"; lim=int("0640",8); bad=[]; n=0
+    if os.path.isdir(p):
+     for x in os.listdir(p):
+      f=os.path.join(p,x); s=os.stat(f,follow_symlinks=False)
+      if stat.S_ISREG(s.st_mode):
+       n+=1; m=stat.S_IMODE(s.st_mode)
+       if s.st_uid!=0 or s.st_gid!=0 or m&~lim: bad.append(f"{f} owner={s.st_uid}:{s.st_gid} mode={m:04o}")
+    else: bad.append("directory missing")
+    if bad: print("NON_COMPLIANT"); print("; ".join(bad))
+    else: print("COMPLIANT"); print(f"{n} files satisfy root:root and mode 0640 or stricter")
+    PY
+  args:
+    executable: /bin/bash
+  register: cis_1_2_1_6_verify
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Show recheck result for CIS 1.2.1.6
+  ansible.builtin.debug:
+    msg: "{{ 'PASS' if ((cis_1_2_1_6_verify.stdout_lines | default([]) | first | default('')) == 'COMPLIANT') else 'NON-COMPLIANT / REVIEW' }} - CIS 1.2.1.6: {{ cis_1_2_1_6_verify.stdout | default('Recheck not run') }}"
+  when: cis_remediate | default(false) | bool
