@@ -1,0 +1,137 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check GRUB configuration exists
+  stat:
+    path: /etc/default/grub
+  register: grub_file
+
+- name: Get configured audit_backlog_limit
+  shell: |
+    find /boot -type f -name 'grub.cfg' -exec \
+    grep -Pho 'audit_backlog_limit=\d+' {} + 2>/dev/null | \
+    head -1 | cut -d= -f2
+  register: audit_backlog_limit
+  changed_when: false
+  failed_when: false
+
+- name: Check approved alternate bootloader exception
+  stat:
+    path: /etc/cis/BOOTLOADER_AUDIT_EXCEPTION
+  register: bootloader_exception
+
+- name: Determine compliance status
+  set_fact:
+    audit_backlog_compliant: >-
+      {{
+        (
+          (audit_backlog_limit.stdout | default('0') | int) >= 81920
+        )
+        or
+        bootloader_exception.stat.exists
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - audit_backlog_limit meets company requirement'
+        if audit_backlog_compliant
+        else
+        'FAIL - audit_backlog_limit missing or below 81920. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Ensure /etc/default/grub.d exists
+  file:
+    path: /etc/default/grub.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - grub_file.stat.exists
+    - not audit_backlog_compliant
+
+- name: Configure audit_backlog_limit
+  copy:
+    dest: /etc/default/grub.d/41-audit-backlog.cfg
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      GRUB_CMDLINE_LINUX="audit_backlog_limit=81920"
+  when:
+    - grub_file.stat.exists
+    - not audit_backlog_compliant
+
+- name: Update grub
+  command: update-grub
+  when:
+    - grub_file.stat.exists
+    - not audit_backlog_compliant
+  register: update_grub_result
+  changed_when: true
+  failed_when: false
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck audit_backlog_limit
+  shell: |
+    find /boot -type f -name 'grub.cfg' -exec \
+    grep -Pho 'audit_backlog_limit=\d+' {} + 2>/dev/null | \
+    head -1 | cut -d= -f2
+  register: audit_backlog_limit_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - >
+        (
+          (audit_backlog_limit_verify.stdout | default('0') | int) >= 81920
+        )
+        or
+        bootloader_exception.stat.exists
+
+    success_msg: |
+      PASS - CIS 6.2.1.4 compliant
+
+      Validation Result:
+      - audit_backlog_limit configured
+
+      Current Value:
+      {{ audit_backlog_limit_verify.stdout }}
+
+      Company Requirement:
+      >= 81920
+
+      Note:
+      Values higher than 81920 remain compliant but should
+      be evaluated against available system RAM.
+
+    fail_msg: |
+      FAIL - CIS 6.2.1.4 non-compliant
+
+      Current Value:
+      {{ audit_backlog_limit_verify.stdout | default('Not Configured') }}
+
+      Required Value:
+      >= 81920
+
+      If using a non-GRUB bootloader, document the equivalent
+      configuration and create:
+
+      /etc/cis/BOOTLOADER_AUDIT_EXCEPTION
