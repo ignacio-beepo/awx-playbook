@@ -1,2 +1,3 @@
 ---
 - include_tasks: 6.2.3.1_Ensure_changes_to_system_administration_scope_(sudoers)_is_collected.yml
+- include_tasks: 6.2.3.2_Ensure_actions_as_another_user_are_always_logged.yml
