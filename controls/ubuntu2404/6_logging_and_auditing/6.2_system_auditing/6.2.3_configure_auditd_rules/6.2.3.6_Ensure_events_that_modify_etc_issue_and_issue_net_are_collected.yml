@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for /etc/issue and /etc/issue.net
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/issue|/etc/issue.net' || true
+  register: issue_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for /etc/issue and /etc/issue.net
+  shell: |
+    grep -E '/etc/issue|/etc/issue.net' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: issue_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    issue_compliant: >-
+      {{
+        ('-w /etc/issue -p wa -k system-locale' in issue_running.stdout)
+        and
+        ('-w /etc/issue.net -p wa -k system-locale' in issue_running.stdout)
+        and
+        ('-w /etc/issue -p wa -k system-locale' in issue_persistent.stdout)
+        and
+        ('-w /etc/issue.net -p wa -k system-locale' in issue_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/issue auditing configured'
+        if issue_compliant
+        else
+        'FAIL - /etc/issue auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create issue banner audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-etc_issue_system_locale.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/issue -p wa -k system-locale
+      -w /etc/issue.net -p wa -k system-locale
+  when: not issue_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not issue_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not issue_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/issue|/etc/issue.net' || true
+  register: issue_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E '/etc/issue|/etc/issue.net' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: issue_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/issue -p wa -k system-locale' in issue_running_verify.stdout"
+      - "'-w /etc/issue.net -p wa -k system-locale' in issue_running_verify.stdout"
+      - "'-w /etc/issue -p wa -k system-locale' in issue_persistent_verify.stdout"
+      - "'-w /etc/issue.net -p wa -k system-locale' in issue_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.6 compliant
+
+      Validation Result:
+      - /etc/issue monitored
+      - /etc/issue.net monitored
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.6 non-compliant
+
+      Running Rules:
+      {{ issue_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ issue_persistent_verify.stdout }}
