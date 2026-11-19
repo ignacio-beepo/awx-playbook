@@ -20,3 +20,4 @@
 - include_tasks: 6.2.3.19_Ensure_successful_file_system_mounts_are_collected.yml
 - include_tasks: 6.2.3.20_Ensure_session_initiation_information_is_collected.yml
 - include_tasks: 6.2.3.21_Ensure_login_and_logout_events_are_collected.yml
+- include_tasks: 6.2.3.22_Ensure_file_deletion_events_by_users_are_collected.yml
