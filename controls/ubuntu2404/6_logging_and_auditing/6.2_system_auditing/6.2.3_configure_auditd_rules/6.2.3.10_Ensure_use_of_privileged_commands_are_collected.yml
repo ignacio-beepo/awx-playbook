@@ -1,0 +1,147 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Get UID_MIN value
+  shell: |
+    awk '/^\s*UID_MIN/{print $2}' /etc/login.defs
+  register: uid_min
+  changed_when: false
+  failed_when: false
+
+- name: Check privileged commands in persistent audit rules
+  shell: |
+    grep -h "key=privileged\|-k privileged" \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: privileged_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Check privileged commands in running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep privileged || true
+  register: privileged_running
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    privileged_commands_compliant: >-
+      {{
+        'privileged' in privileged_persistent.stdout
+        and
+        'privileged' in privileged_running.stdout
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Privileged command auditing configured'
+        if privileged_commands_compliant
+        else
+        'FAIL - Privileged command auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Generate privileged command audit rules
+  shell: |
+    UID_MIN=$(awk '/^\s*UID_MIN/{print $2}' /etc/login.defs)
+
+    TMPFILE=$(mktemp)
+
+    for PARTITION in $(
+      findmnt -n -l -k -it \
+      $(awk '/nodev/ { print $2 }' /proc/filesystems | paste -sd,) |
+      grep -Pv 'noexec|nosuid' |
+      awk '{print $1}'
+    ); do
+
+      find "${PARTITION}" -xdev -perm /6000 -type f 2>/dev/null |
+      while read -r PRIVILEGED; do
+
+        echo "-a always,exit -F path=${PRIVILEGED} -F perm=x -F auid>=${UID_MIN} -F auid!=unset -k privileged"
+
+      done
+
+    done | sort -u > "${TMPFILE}"
+
+    cp "${TMPFILE}" /etc/audit/rules.d/50-privileged.rules
+
+    rm -f "${TMPFILE}"
+  args:
+    executable: /bin/bash
+  when: not privileged_commands_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not privileged_commands_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not privileged_commands_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck persistent privileged audit rules
+  shell: |
+    grep -h "key=privileged\|-k privileged" \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: privileged_persistent_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck running privileged audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep privileged || true
+  register: privileged_running_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'privileged' in privileged_persistent_verify.stdout"
+      - "'privileged' in privileged_running_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.10 compliant
+
+      Validation Result:
+      - Privileged commands identified
+      - SUID/SGID executables monitored
+      - privileged audit key configured
+      - rules loaded into auditd
+      - persistent audit rules configured
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.10 non-compliant
+
+      Running Rules:
+      {{ privileged_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ privileged_persistent_verify.stdout }}

@@ -1,0 +1,156 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check if /etc/netplan exists
+  stat:
+    path: /etc/netplan
+  register: netplan_dir
+
+- name: Check running audit rules for /etc/netplan
+  shell: |
+    auditctl -l 2>/dev/null | grep '/etc/netplan' || true
+  register: netplan_running
+  changed_when: false
+  failed_when: false
+  when: netplan_dir.stat.exists
+
+- name: Check persistent audit rules for /etc/netplan
+  shell: |
+    grep '/etc/netplan' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  regis*er: netplan_persistent
+  changed_w*en: false
+  failed_when: false
+  w*en: netplan_dir.stat.exists
+
+- nam*: Determine compliance status
+  se*_fact:
+    netplan_compliant: >-
+ *    {{
+        (
+          not net*lan_dir.stat.exists
+        )
+    *   or
+        (
+          '-w /etc*netplan -p wa -k system-locale'
+  *       in netplan_running.stdout
+ *        and
+          '-w /etc/net*lan -p wa -k system-locale'
+      *   in netplan_persistent.stdout
+  *     )
+      }}
+
+- name: Show audi* result
+  debug:
+    msg: >-
+     *{{
+        'PASS - Netplan auditin* configured'
+        if netplan_co*pliant
+        else
+        'FAIL * Netplan auditing missing. Startin* remediation...'
+      }}
+
+#######*##################################*##################################*
+# REMEDIATION
+###################*##################################*#######################
+
+- name: C*eate netplan audit rules
+  copy:
+ *  dest: /etc/audit/rules.d/50-netp*an_system_locale.rules
+    owner: *oot
+    group: root
+    mode: "064*"
+    content: |
+      -w /etc/net*lan -p wa -k system-locale
+  when:*    - netplan_dir.stat.exists
+    * not netplan_compliant
+
+- name: Lo*d audit rules
+  command: augenrule* --load
+  register: augenrules_res*lt
+  changed_when: true
+  failed_w*en: false
+  when:
+    - netplan_di*.stat.exists
+    - not netplan_com*liant
+
+- name: Check audit enabled*mode
+  shell: |
+    auditctl -s | *rep enabled || true
+  register: au*it_enabled_state
+  changed_when: f*lse
+  failed_when: false
+  when:
+ *  - netplan_dir.stat.exists
+    - *ot netplan_compliant
+
+- name: Disp*ay reboot recommendation
+  debug:
+*   msg: "Reboot required to fully *oad audit rules"
+  when:
+    - net*lan_dir.stat.exists
+    - not netp*an_compliant
+    - audit_enabled_s*ate.stdout is search('enabled 2')
+*##################################*##################################*########
+# RECHECK
+###############*##################################*###########################
+
+- nam*: Recheck running audit rules
+  sh*ll: |
+    auditctl -l 2>/dev/null * grep '/etc/netplan' || true
+  register: netplan_running_verify
+  changed_when: false
+  failed_when: false
+  when: netplan_dir.stat.exists
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep '/etc/netplan' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: netplan_persistent_verify
+  changed_when: false
+  failed_when: false
+  when: netplan_dir.stat.exists
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - >
+        (
+          not netplan_dir.stat.exists
+        )
+        or
+        (
+          '-w /etc/netplan -p wa -k system-locale'
+          in netplan_running_verify.stdout
+          and
+          '-w /etc/netplan -p wa -k system-locale'
+          in netplan_persistent_verify.stdout
+        )
+
+    success_msg: |
+      PASS - CIS 6.2.3.9 compliant
+
+      Validation Result:
+      - /etc/netplan monitored
+
+      OR
+
+      - /etc/netplan does not exist (PASS state)
+
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.9 non-compliant
+
+      Running Rules:
+      {{ netplan_running_verify.stdout | default('Not Found') }}
+
+      Persistent Rules:
+      {{ netplan_persistent_verify.stdout | default('Not Found') }}
