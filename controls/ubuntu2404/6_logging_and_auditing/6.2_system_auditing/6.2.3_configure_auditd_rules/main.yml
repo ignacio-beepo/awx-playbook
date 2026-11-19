@@ -15,3 +15,4 @@
 - include_tasks: 6.2.3.14_Ensure_events_that_modify_etc_security_opasswd_are_collected.yml
 - include_tasks: 6.2.3.15_Ensure_events_that_modify_etc_nsswitch_conf_are_collected.yml
 - include_tasks: 6.2.3.16_Ensure_events_that_modify_etc_pam_conf_and_pam_d_are_collected.yml
+- include_tasks: 6.2.3.17_Ensure_unsuccessful_file_access_attempts_are_collected.yml
