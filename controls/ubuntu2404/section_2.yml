@@ -1,0 +1,27 @@
+---
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 2.1 - Configure Server Services
+# ============================================================
+
+- ansible.builtin.import_tasks: 2_services/2.1_configure_server_services/main.yml
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 2.2 - Configure Client Services
+# ============================================================
+
+#- ansible.builtin.import_tasks: 2_services/2.2_configure_client_services/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 2.3 - Configure Time Synchronization
+# ============================================================
+
+#- ansible.builtin.import_tasks: 2_services/2.3_configure_time_synchronization/main.yml
+
+# ============================================================
+# CIS Ubuntu 24.04 LTS Benchmark
+# Section 2.4 - Job Schedulers
+# ============================================================
+
+#- ansible.builtin.import_tasks: 2_services/2.4_job_schedulers/main.yml
