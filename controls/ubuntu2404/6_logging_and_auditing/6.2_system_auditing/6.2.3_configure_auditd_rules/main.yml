@@ -19,3 +19,4 @@
 - include_tasks: 6.2.3.18_Ensure_discretionary_access_control_permission_modification_events_are_collected.yml
 - include_tasks: 6.2.3.19_Ensure_successful_file_system_mounts_are_collected.yml
 - include_tasks: 6.2.3.20_Ensure_session_initiation_information_is_collected.yml
+- include_tasks: 6.2.3.21_Ensure_login_and_logout_events_are_collected.yml
