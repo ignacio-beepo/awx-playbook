@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for login/logout files
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/var/log/lastlog|/var/run/faillock' || true
+  register: login_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for login/logout files
+  shell: |
+    grep -E '/var/log/lastlog|/var/run/faillock' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: login_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    login_compliant: >-
+      {{
+        ('-w /var/log/lastlog -p wa -k logins' in login_running.stdout)
+        and
+        ('-w /var/run/faillock -p wa -k logins' in login_running.stdout)
+        and
+        ('-w /var/log/lastlog -p wa -k logins' in login_persistent.stdout)
+        and
+        ('-w /var/run/faillock -p wa -k logins' in login_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Login/logout auditing configured'
+        if login_compliant
+        else
+        'FAIL - Login/logout auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create login audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-login.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /var/log/lastlog -p wa -k logins
+      -w /var/run/faillock -p wa -k logins
+  when: not login_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not login_compliant
+
+- name: Check audit enabled state
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not login_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/var/log/lastlog|/var/run/faillock' || true
+  register: login_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E '/var/log/lastlog|/var/run/faillock' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: login_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /var/log/lastlog -p wa -k logins' in login_running_verify.stdout"
+      - "'-w /var/run/faillock -p wa -k logins' in login_running_verify.stdout"
+      - "'-w /var/log/lastlog -p wa -k logins' in login_persistent_verify.stdout"
+      - "'-w /var/run/faillock -p wa -k logins' in login_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.21 compliant
+
+      Validation Result:
+      - /var/log/lastlog monitored
+      - /var/run/faillock monitored
+      - logins audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.21 non-compliant
+
+      Running Rules:
+      {{ login_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ login_persistent_verify.stdout }}
