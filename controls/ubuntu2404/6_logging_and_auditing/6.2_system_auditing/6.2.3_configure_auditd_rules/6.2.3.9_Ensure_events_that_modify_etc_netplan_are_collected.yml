@@ -26,24 +26,44 @@
 
 - name: Determine compliance status
   set_fact:
-    netplan_compliant: "{{ (not netplan_dir.stat.exists) or (('-w /etc/netplan -p wa -k system-locale' in netplan_running.stdout) and ('-w /etc/netplan -p wa -k system-locale' in netplan_persistent.stdout)) }}"
+    netplan_compliant: true
+  when: not netplan_dir.stat.exists
+
+- name: Determine compliance status when netplan exists
+  set_fact:
+    netplan_compliant: >-
+      {{
+        '-w /etc/netplan -p wa -k system-locale'
+        in netplan_running.stdout
+        and
+        '-w /etc/netplan -p wa -k system-locale'
+        in netplan_persistent.stdout
+      }}
+  when: netplan_dir.stat.exists
 
 - name: Show audit result
   debug:
-    msg: "{{ 'PASS - Netplan auditing configured' if netplan_compliant else 'FAIL - Netplan auditing missing. Starting remediation...' }}"
+    msg: >-
+      {{
+        'PASS - Netplan auditing configured'
+        if netplan_compliant
+        else
+        'FAIL - Netplan auditing missing. Starting remediation...'
+      }}
 
 ##############################################################################
 # REMEDIATION
 ##############################################################################
 
 - name: Create netplan audit rules
-  copy:
-    dest: /etc/audit/rules.d/50-netplan_system_locale.rules
+  lineinfile:
+    path: /etc/audit/rules.d/50-netplan_system_locale.rules
+    line: "-w /etc/netplan -p wa -k system-locale"
+    create: true
     owner: root
     group: root
     mode: "0640"
-    content: |
-      -w /etc/netplan -p wa -k system-locale
+    state: present
   when:
     - netplan_dir.stat.exists
     - not netplan_compliant
@@ -57,7 +77,7 @@
     - netplan_dir.stat.exists
     - not netplan_compliant
 
-- name: Check audit enabled state
+- name: Check audit enabled mode
   shell: |
     auditctl -s | grep enabled || true
   register: audit_enabled_state
@@ -96,26 +116,38 @@
 # FINAL CIS VALIDATION
 ##############################################################################
 
-- name: Final CIS Validation
+- name: Final CIS Validation (No Netplan Directory)
   assert:
     that:
-      - netplan_compliant
+      - not netplan_dir.stat.exists
+    success_msg: |
+      PASS - CIS 6.2.3.9 compliant
+
+      Validation Result:
+      - /etc/netplan does not exist (PASS state)
+  when: not netplan_dir.stat.exists
+
+- name: Final CIS Validation (Netplan Exists)
+  assert:
+    that:
+      - "'-w /etc/netplan -p wa -k system-locale' in netplan_running_verify.stdout"
+      - "'-w /etc/netplan -p wa -k system-locale' in netplan_persistent_verify.stdout"
 
     success_msg: |
       PASS - CIS 6.2.3.9 compliant
 
       Validation Result:
       - /etc/netplan monitored
-
-      OR
-
-      - /etc/netplan does not exist (PASS state)
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
 
     fail_msg: |
       FAIL - CIS 6.2.3.9 non-compliant
 
       Running Rules:
-      {{ netplan_running_verify.stdout | default('Not Found') }}
+      {{ netplan_running_verify.stdout }}
 
       Persistent Rules:
-      {{ netplan_persistent_verify.stdout | default('Not Found') }}
+      {{ netplan_persistent_verify.stdout }}
+  when: netplan_dir.stat.exists
