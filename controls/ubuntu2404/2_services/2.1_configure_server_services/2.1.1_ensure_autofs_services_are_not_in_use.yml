@@ -5,7 +5,8 @@
 ##############################################################################
 
 - name: Assessment - CIS 2.1.1
-  ansible.builtin.shell: |
+  ansible.builtin.shell:
+    cmd: |
     packages=('autofs')
     units=('autofs.service')
     installed=()
