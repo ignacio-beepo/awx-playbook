@@ -12,3 +12,5 @@
 - include_tasks: 6.2.3.11_Ensure_events_that_modify_etc_group_information_are_collected.yml
 - include_tasks: 6.2.3.12_Ensure_events_that_modify_etc_passwd_information_are_collected.yml
 - include_tasks: 6.2.3.13_Ensure_events_that_modify_etc_shadow_and_gshadow_are_collected.yml
+- include_tasks: 6.2.3.14_Ensure_events_that_modify_etc_security_opasswd_are_collected.yml
+
