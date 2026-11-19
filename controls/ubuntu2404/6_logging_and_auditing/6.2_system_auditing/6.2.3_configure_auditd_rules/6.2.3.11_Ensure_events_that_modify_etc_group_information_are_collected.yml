@@ -1,0 +1,120 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for /etc/group
+  shell: |
+    auditctl -l 2>/dev/null | grep -P '^\s*-w\s+/etc/group\s+' || true
+  register: group_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for /etc/group
+  shell: |
+    grep -P '^\s*-w\s+/etc/group\s+' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: group_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    group_identity_compliant: >-
+      {{
+        ('-w /etc/group -p wa -k identity' in group_running.stdout)
+        and
+        ('-w /etc/group -p wa -k identity' in group_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/group auditing configured'
+        if group_identity_compliant
+        else
+        'FAIL - /etc/group auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create identity audit rules file
+  copy:
+    dest: /etc/audit/rules.d/50-identity.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/group -p wa -k identity
+  when: not group_identity_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not group_identity_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not group_identity_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -P '^\s*-w\s+/etc/group\s+' || true
+  register: group_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -P '^\s*-w\s+/etc/group\s+' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: group_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/group -p wa -k identity' in group_running_verify.stdout"
+      - "'-w /etc/group -p wa -k identity' in group_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.11 compliant
+
+      Validation Result:
+      - /etc/group monitored
+      - identity audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.11 non-compliant
+
+      Running Rules:
+      {{ group_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ group_persistent_verify.stdout }}
