@@ -9,3 +9,4 @@
 - include_tasks: 6.2.3.8_Ensure_events_that_modify_etc_network_and_networks_are_collected.yml
 - include_tasks: 6.2.3.9_Ensure_events_that_modify_etc_netplan_are_collected.yml
 - include_tasks: 6.2.3.10_Ensure_use_of_privileged_commands_are_collected.yml
+- include_tasks: 6.2.3.11_Ensure_events_that_modify_etc_group_information_are_collected.yml
