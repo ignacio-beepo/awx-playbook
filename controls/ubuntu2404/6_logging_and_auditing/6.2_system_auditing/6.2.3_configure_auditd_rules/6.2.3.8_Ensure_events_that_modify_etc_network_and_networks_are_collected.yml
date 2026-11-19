@@ -12,8 +12,7 @@
 
 - name: Check persistent audit rules for /etc/network and /etc/networks
   shell: |
-    grep -E '/etc/network|/etc/networks' \
-    /etc/audit/rules.d/*.rules 2>/dev/null || true
+    grep -E '/etc/network|/etc/networks' /etc/audit/rules.d/*.rules 2>/dev/null || true
   register: network_persistent
   changed_when: false
   failed_when: false
@@ -45,9 +44,9 @@
 # REMEDIATION
 ##############################################################################
 
-- name: Create network environment audit rules
+- name: Create network audit rules file
   copy:
-    dest: /etc/audit/rules.d/50-etc_sysconfig_system_locale.rules
+    dest: /etc/audit/rules.d/50-etc_network_system_locale.rules
     owner: root
     group: root
     mode: "0640"
@@ -63,7 +62,7 @@
   failed_when: false
   when: not network_compliant
 
-- name: Check audit enabled mode
+- name: Check audit enabled state
   shell: |
     auditctl -s | grep enabled || true
   register: audit_enabled_state
@@ -72,7 +71,7 @@
 
 - name: Display reboot recommendation
   debug:
-    msg: "Reboot required to fully load audit rules"
+    msg: Reboot required to fully load audit rules
   when:
     - audit_enabled_state.stdout is search('enabled 2')
     - not network_compliant
@@ -90,8 +89,7 @@
 
 - name: Recheck persistent audit rules
   shell: |
-    grep -E '/etc/network|/etc/networks' \
-    /etc/audit/rules.d/*.rules 2>/dev/null || true
+    grep -E '/etc/network|/etc/networks' /etc/audit/rules.d/*.rules 2>/dev/null || true
   register: network_persistent_verify
   changed_when: false
   failed_when: false
