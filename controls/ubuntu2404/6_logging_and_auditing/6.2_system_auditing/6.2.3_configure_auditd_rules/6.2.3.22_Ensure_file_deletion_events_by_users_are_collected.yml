@@ -1,0 +1,135 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running delete audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep delete || true
+  register: delete_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent delete audit rules
+  shell: |
+    grep delete /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: delete_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    delete_compliant: >-
+      {{
+        ('delete' in delete_running.stdout)
+        and
+        ('delete' in delete_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - File deletion auditing configured'
+        if delete_compliant
+        else
+        'FAIL - File deletion auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create delete audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-delete.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      ## Company Scope - OS Filesystem Only
+
+      -a always,exit -F arch=b64 -F dir=/etc      -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/bin      -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/sbin     -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/usr/bin  -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/usr/sbin -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/var      -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+      -a always,exit -F arch=b64 -F dir=/home     -S unlink,unlinkat,rename,renameat,renameat2 -F auid>=1000 -F auid!=unset -k delete
+  when: not delete_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not delete_compliant
+
+- name: Check audit enabled state
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not delete_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running delete audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep delete || true
+  register: delete_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent delete audit rules
+  shell: |
+    grep delete /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: delete_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'delete' in delete_running_verify.stdout"
+      - "'delete' in delete_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.22 compliant (Company Standard)
+
+      Validation Result:
+      - File deletion monitoring enabled
+      - delete audit key configured
+      - Running audit rules updated
+      - Persistent audit rules updated
+
+      Company Scope:
+      /etc
+      /bin
+      /sbin
+      /usr/bin
+      /usr/sbin
+      /var
+      /home
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.22 non-compliant
+
+      Running Rules:
+      {{ delete_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ delete_persistent_verify.stdout }}
