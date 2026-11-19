@@ -8,8 +8,8 @@
   ansible.builtin.include_tasks: 2.1.2_ensure_mail_transfer_agents_are_configured_for_local-only_mode.yml
 - name: Include CIS 2.1.3
   ansible.builtin.include_tasks: 2.1.3_ensure_avahi_daemon_services_are_not_in_use.yml
-- name: Include CIS 2.1.4
-  ansible.builtin.include_tasks: 2.1.4_ensure_only_approved_services_are_listening_on_a_network_interface.yml
+# - name: Include CIS 2.1.4 (Manual Review)
+#   ansible.builtin.include_tasks: 2.1.4_ensure_only_approved_services_are_listening_on_a_network_interface.yml
 - name: Include CIS 2.1.5
   ansible.builtin.include_tasks: 2.1.5_ensure_dhcp_server_services_are_not_in_use.yml
 - name: Include CIS 2.1.6
