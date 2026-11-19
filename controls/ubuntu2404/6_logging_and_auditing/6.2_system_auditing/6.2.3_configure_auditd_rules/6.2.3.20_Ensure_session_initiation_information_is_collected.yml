@@ -1,0 +1,136 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for session files
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/var/run/utmp|/var/log/wtmp|/var/log/btmp' || true
+  register: session_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for session files
+  shell: |
+    grep -E '/var/run/utmp|/var/log/wtmp|/var/log/btmp' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: session_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    session_compliant: >-
+      {{
+        ('-w /var/run/utmp -p wa -k session' in session_running.stdout)
+        and
+        ('-w /var/log/wtmp -p wa -k session' in session_running.stdout)
+        and
+        ('-w /var/log/btmp -p wa -k session' in session_running.stdout)
+        and
+        ('-w /var/run/utmp -p wa -k session' in session_persistent.stdout)
+        and
+        ('-w /var/log/wtmp -p wa -k session' in session_persistent.stdout)
+        and
+        ('-w /var/log/btmp -p wa -k session' in session_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Session auditing configured'
+        if session_compliant
+        else
+        'FAIL - Session auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create session audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-session.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /var/run/utmp -p wa -k session
+      -w /var/log/wtmp -p wa -k session
+      -w /var/log/btmp -p wa -k session
+  when: not session_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not session_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not session_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running session audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/var/run/utmp|/var/log/wtmp|/var/log/btmp' || true
+  register: session_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent session audit rules
+  shell: |
+    grep -E '/var/run/utmp|/var/log/wtmp|/var/log/btmp' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: session_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /var/run/utmp -p wa -k session' in session_running_verify.stdout"
+      - "'-w /var/log/wtmp -p wa -k session' in session_running_verify.stdout"
+      - "'-w /var/log/btmp -p wa -k session' in session_running_verify.stdout"
+      - "'-w /var/run/utmp -p wa -k session' in session_persistent_verify.stdout"
+      - "'-w /var/log/wtmp -p wa -k session' in session_persistent_verify.stdout"
+      - "'-w /var/log/btmp -p wa -k session' in session_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.20 compliant
+
+      Validation Result:
+      - /var/run/utmp monitored
+      - /var/log/wtmp monitored
+      - /var/log/btmp monitored
+      - session audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.20 non-compliant
+
+      Running Rules:
+      {{ session_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ session_persistent_verify.stdout }}
