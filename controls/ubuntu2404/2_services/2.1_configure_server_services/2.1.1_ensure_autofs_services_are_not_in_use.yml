@@ -5,35 +5,41 @@
 ##############################################################################
 
 - name: Assessment - CIS 2.1.1
-  ansible.builtin.shell: |
-    package="autofs"
-    unit="autofs.service"
+  ansible.builtin.shell:
+    cmd: |
+      package="autofs"
+      unit="autofs.service"
 
-    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
-      installed="yes"
-    else
       installed="no"
-    fi
+      enabled="no"
+      active="no"
 
-    enabled_state="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
-    active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
+      if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+        installed="yes"
+      fi
 
-    if [ "$installed" = "no" ]; then
-      echo "COMPLIANT: package not installed"
-    elif [ "$enabled_state" != "enabled" ] && \
-         [ "$enabled_state" != "enabled-runtime" ] && \
-         [ "$active_state" != "active" ]; then
-      echo "COMPLIANT: package installed but service inactive and disabled"
-    else
-      echo "NON_COMPLIANT: package/service in use"
-    fi
+      state="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+      active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
 
-    echo "Package: $package"
-    echo "Installed: $installed"
-    echo "Enabled state: $enabled_state"
-    echo "Active state: $active_state"
+      if [[ "$state" == "enabled" || "$state" == "enabled-runtime" ]]; then
+        enabled="yes"
+      fi
 
-  args:
+      if [[ "$active_state" == "active" ]]; then
+        active="yes"
+      fi
+
+      if [[ "$installed" == "no" ]]; then
+        echo "COMPLIANT: package not installed"
+      elif [[ "$enabled" == "no" && "$active" == "no" ]]; then
+        echo "COMPLIANT: package installed but service inactive and disabled"
+      else
+        echo "NON_COMPLIANT: package/service in use"
+      fi
+
+      echo "Installed: $installed"
+      echo "Enabled: $state"
+      echo "Active: $active_state"
     executable: /bin/bash
   register: cis_2_1_1_audit
   changed_when: false
@@ -49,7 +55,7 @@
       {{
         'PASS - CIS 2.1.1 compliant'
         if cis_2_1_1_compliant
-        else 'REVIEW/FAIL - CIS 2.1.1: ' ~ (cis_2_1_1_audit.stdout | default('No audit output'))
+        else 'FAIL - CIS 2.1.1: ' ~ (cis_2_1_1_audit.stdout | default('No audit output'))
       }}
 
 ##############################################################################
@@ -57,35 +63,26 @@
 ##############################################################################
 
 - name: Remediation - CIS 2.1.1
-  ansible.builtin.shell: |
-    packages=('autofs')
-    units=('autofs.service')
-    echo "Remediation mode: {{ cis_21_package_remediation | default('mask') }}"
-    if [ "{{ cis_21_package_remediation | default('mask') }}" = "purge" ]; then
-      for unit in "${units[@]}"; do systemctl stop "$unit" 2>/dev/null || true; done
-      apt-get -y purge "${packages[@]}"
-      echo "REMEDIATION_PACKAGES_PURGED"
-    else
-      for unit in "${units[@]}"; do
-        systemctl stop "$unit" 2>/dev/null || true
-        systemctl mask "$unit" 2>/dev/null || true
-      done
-      systemctl daemon-reload
-      echo "REMEDIATION_SERVICES_STOPPED_AND_MASKED"
-    fi
-  args:
+  ansible.builtin.shell:
+    cmd: |
+      package="autofs"
+      unit="autofs.service"
+      mode="{{ cis_21_package_remediation | default('mask') }}"
+
+      if [[ "$mode" == "purge" ]]; then
+        systemctl disable --now "$unit" 2>/dev/null || true
+        apt-get -y purge "$package"
+        echo "REMEDIATION_PACKAGES_PURGED"
+      else
+        systemctl disable --now "$unit" 2>/dev/null || true
+        systemctl mask "$unit"
+        systemctl daemon-reload
+        echo "REMEDIATION_SERVICES_STOPPED_AND_MASKED"
+      fi
     executable: /bin/bash
   register: cis_2_1_1_remediation
   changed_when: "'REMEDIATION_' in (cis_2_1_1_remediation.stdout | default(''))"
   failed_when: false
-  when:
-    - not cis_2_1_1_compliant
-    - cis_remediate | default(false) | bool
-
-- name: Remediation guidance - CIS 2.1.1
-  ansible.builtin.debug:
-    msg: >-
-      Default remediation masks the listed service/socket units and retains packages. Set `cis_21_package_remediation: purge` only after checking dependencies and approving package removal. The default is deliberately conservative.
   when:
     - not cis_2_1_1_compliant
     - cis_remediate | default(false) | bool
@@ -95,33 +92,30 @@
 ##############################################################################
 
 - name: Recheck - CIS 2.1.1
-  ansible.builtin.shell: |
-    packages=('autofs')
-    units=('autofs.service')
-    installed=()
-    enabled=()
-    active=()
-    for pkg in "${packages[@]}"; do
-      dpkg-query -s "$pkg" >/dev/null 2>&1 && installed+=("$pkg")
-    done
-    for unit in "${units[@]}"; do
+  ansible.builtin.shell:
+    cmd: |
+      package="autofs"
+      unit="autofs.service"
+
+      installed="no"
+      if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+        installed="yes"
+      fi
+
       state="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
       active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
-      [[ "$state" == "enabled" || "$state" == "enabled-runtime" || "$state" == "static" ]] && enabled+=("$unit:$state")
-      [[ "$active_state" == "active" ]] && active+=("$unit")
-    done
-    if [ "${#installed[@]}" -eq 0 ]; then
-      echo "COMPLIANT: target package(s) not installed"
-    elif [ "${#enabled[@]}" -eq 0 ] && [ "${#active[@]}" -eq 0 ]; then
-      echo "COMPLIANT: package installed but service(s) inactive and not enabled"
-    else
-      echo "NON_COMPLIANT: package/service in use"
-    fi
-    printf 'Installed packages: %s\\n' "${installed[*]:-none}"
-    printf 'Enabled/static units: %s\\n' "${enabled[*]:-none}"
-    printf 'Active units: %s\\n' "${active[*]:-none}"
 
-  args:
+      if [[ "$installed" == "no" ]]; then
+        echo "COMPLIANT: package not installed"
+      elif [[ "$state" != "enabled" && "$state" != "enabled-runtime" && "$active_state" != "active" ]]; then
+        echo "COMPLIANT: package installed but service inactive and disabled"
+      else
+        echo "NON_COMPLIANT: package/service in use"
+      fi
+
+      echo "Installed: $installed"
+      echo "Enabled: $state"
+      echo "Active: $active_state"
     executable: /bin/bash
   register: cis_2_1_1_recheck
   changed_when: false
@@ -133,7 +127,11 @@
     msg: >-
       {{
         'PASS - CIS 2.1.1 compliant after remediation'
-        if ('COMPLIANT' in (cis_2_1_1_recheck.stdout | default('')) and 'NON_COMPLIANT' not in (cis_2_1_1_recheck.stdout | default('')))
+        if (
+          'COMPLIANT:' in (cis_2_1_1_recheck.stdout | default(''))
+          and
+          'NON_COMPLIANT:' not in (cis_2_1_1_recheck.stdout | default(''))
+        )
         else 'RECHECK REQUIRED - CIS 2.1.1: ' ~ (cis_2_1_1_recheck.stdout | default('No recheck output'))
       }}
   when: cis_remediate | default(false) | bool
