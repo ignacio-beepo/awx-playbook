@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for /etc/hosts and /etc/hostname
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/hosts|/etc/hostname' || true
+  register: host_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for /etc/hosts and /etc/hostname
+  shell: |
+    grep -E '/etc/hosts|/etc/hostname' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: host_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    host_compliant: >-
+      {{
+        ('-w /etc/hosts -p wa -k system-locale' in host_running.stdout)
+        and
+        ('-w /etc/hostname -p wa -k system-locale' in host_running.stdout)
+        and
+        ('-w /etc/hosts -p wa -k system-locale' in host_persistent.stdout)
+        and
+        ('-w /etc/hostname -p wa -k system-locale' in host_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/hosts and /etc/hostname auditing configured'
+        if host_compliant
+        else
+        'FAIL - /etc/hosts and /etc/hostname auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create hosts and hostname audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-etc_host_system_locale.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/hosts -p wa -k system-locale
+      -w /etc/hostname -p wa -k system-locale
+  when: not host_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not host_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not host_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/hosts|/etc/hostname' || true
+  register: host_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E '/etc/hosts|/etc/hostname' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: host_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/hosts -p wa -k system-locale' in host_running_verify.stdout"
+      - "'-w /etc/hostname -p wa -k system-locale' in host_running_verify.stdout"
+      - "'-w /etc/hosts -p wa -k system-locale' in host_persistent_verify.stdout"
+      - "'-w /etc/hostname -p wa -k system-locale' in host_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.7 compliant
+
+      Validation Result:
+      - /etc/hosts monitored
+      - /etc/hostname monitored
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.7 non-compliant
+
+      Running Rules:
+      {{ host_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ host_persistent_verify.stdout }}
