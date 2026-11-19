@@ -1,0 +1,149 @@
+---
+##############################################################################
+# CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0
+# CIS 2.1.2 - mail transfer agents are configured for local-only mode
+##############################################################################
+
+- name: Assessment - CIS 2.1.2
+  ansible.builtin.shell: |
+    a_output=(); a_output2=(); a_port_list=("25" "465" "587")
+    for l_port_number in "${a_port_list[@]}"; do
+      if ss -plntu 2>/dev/null | grep -P -- ':'"$l_port_number"'\b' | grep -Pvq -- '\h+(127\.0\.0\.1|\[?::1\]?):'"$l_port_number"'\b'; then
+        a_output2+=("Port $l_port_number is listening on a non-loopback interface")
+      else
+        a_output+=("Port $l_port_number is not listening on a non-loopback interface")
+      fi
+    done
+    l_interfaces=""
+    if command -v postconf >/dev/null 2>&1; then
+      l_interfaces="$(postconf -h inet_interfaces 2>/dev/null)"
+    elif command -v exim >/dev/null 2>&1; then
+      l_interfaces="$(exim -bP local_interfaces 2>/dev/null)"
+    elif command -v sendmail >/dev/null 2>&1; then
+      l_interfaces="$(grep -i 'O DaemonPortOptions=' /etc/mail/sendmail.cf 2>/dev/null | grep -oP '(?<=Addr=)[^,+]+' | grep -v '^127\.0\.0\.1$' || true)"
+    fi
+    if [ -n "$l_interfaces" ]; then
+      if grep -Pqi '\ball\b' <<< "$l_interfaces"; then
+        a_output2+=("MTA is bound to all network interfaces: $l_interfaces")
+      elif ! grep -Pqi '(inet_interfaces\s*=\s*)?(127\.0\.0\.1|::1|loopback-only)' <<< "$l_interfaces"; then
+        a_output2+=("MTA interface binding requires review: $l_interfaces")
+      fi
+    else
+      a_output+=("MTA not detected or not in use")
+    fi
+    if [ "${#a_output2[@]}" -eq 0 ]; then
+      echo "COMPLIANT"
+      printf '%s\n' "${a_output[@]}"
+    else
+      echo "NON_COMPLIANT"
+      printf '%s\n' "${a_output2[@]}"
+      printf '%s\n' "${a_output[@]}"
+    fi
+  args:
+    executable: /bin/bash
+  register: cis_2_1_2_audit
+  changed_when: false
+  failed_when: false
+
+- name: Set compliance status - CIS 2.1.2
+  ansible.builtin.set_fact:
+    cis_2_1_2_compliant: "{{ 'COMPLIANT' in (cis_2_1_2_audit.stdout | default('')) and 'NON_COMPLIANT' not in (cis_2_1_2_audit.stdout | default('')) }}"
+
+- name: Report assessment - CIS 2.1.2
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 2.1.2 compliant'
+        if cis_2_1_2_compliant
+        else 'REVIEW/FAIL - CIS 2.1.2: ' ~ (cis_2_1_2_audit.stdout | default('No audit output'))
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Remediation - CIS 2.1.2
+  ansible.builtin.shell: |
+    if command -v postconf >/dev/null 2>&1; then
+      if grep -Eq '^[[:space:]]*inet_interfaces[[:space:]]*=' /etc/postfix/main.cf; then
+        sed -i 's/^[[:space:]]*inet_interfaces[[:space:]]*=.*/inet_interfaces = loopback-only/' /etc/postfix/main.cf
+      else
+        printf '\ninet_interfaces = loopback-only\n' >> /etc/postfix/main.cf
+      fi
+      postfix check && systemctl restart postfix
+      echo "REMEDIATION_POSTFIX_LOOPBACK_ONLY"
+    else
+      echo "MANUAL_REMEDIATION_REQUIRED: Configure Exim/Sendmail/other MTA to bind only to loopback."
+    fi
+  args:
+    executable: /bin/bash
+  register: cis_2_1_2_remediation
+  changed_when: "'REMEDIATION_' in (cis_2_1_2_remediation.stdout | default(''))"
+  failed_when: false
+  when:
+    - not cis_2_1_2_compliant
+    - cis_remediate | default(false) | bool
+
+- name: Remediation guidance - CIS 2.1.2
+  ansible.builtin.debug:
+    msg: >-
+      Automated change applies only to Postfix. Exim, Sendmail, and other MTAs require vendor/site-specific configuration. The audit also checks SMTP listener ports 25, 465, and 587.
+  when:
+    - not cis_2_1_2_compliant
+    - cis_remediate | default(false) | bool
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck - CIS 2.1.2
+  ansible.builtin.shell: |
+    a_output=(); a_output2=(); a_port_list=("25" "465" "587")
+    for l_port_number in "${a_port_list[@]}"; do
+      if ss -plntu 2>/dev/null | grep -P -- ':'"$l_port_number"'\b' | grep -Pvq -- '\h+(127\.0\.0\.1|\[?::1\]?):'"$l_port_number"'\b'; then
+        a_output2+=("Port $l_port_number is listening on a non-loopback interface")
+      else
+        a_output+=("Port $l_port_number is not listening on a non-loopback interface")
+      fi
+    done
+    l_interfaces=""
+    if command -v postconf >/dev/null 2>&1; then
+      l_interfaces="$(postconf -h inet_interfaces 2>/dev/null)"
+    elif command -v exim >/dev/null 2>&1; then
+      l_interfaces="$(exim -bP local_interfaces 2>/dev/null)"
+    elif command -v sendmail >/dev/null 2>&1; then
+      l_interfaces="$(grep -i 'O DaemonPortOptions=' /etc/mail/sendmail.cf 2>/dev/null | grep -oP '(?<=Addr=)[^,+]+' | grep -v '^127\.0\.0\.1$' || true)"
+    fi
+    if [ -n "$l_interfaces" ]; then
+      if grep -Pqi '\ball\b' <<< "$l_interfaces"; then
+        a_output2+=("MTA is bound to all network interfaces: $l_interfaces")
+      elif ! grep -Pqi '(inet_interfaces\s*=\s*)?(127\.0\.0\.1|::1|loopback-only)' <<< "$l_interfaces"; then
+        a_output2+=("MTA interface binding requires review: $l_interfaces")
+      fi
+    else
+      a_output+=("MTA not detected or not in use")
+    fi
+    if [ "${#a_output2[@]}" -eq 0 ]; then
+      echo "COMPLIANT"
+      printf '%s\n' "${a_output[@]}"
+    else
+      echo "NON_COMPLIANT"
+      printf '%s\n' "${a_output2[@]}"
+      printf '%s\n' "${a_output[@]}"
+    fi
+  args:
+    executable: /bin/bash
+  register: cis_2_1_2_recheck
+  changed_when: false
+  failed_when: false
+  when: cis_remediate | default(false) | bool
+
+- name: Report recheck - CIS 2.1.2
+  ansible.builtin.debug:
+    msg: >-
+      {{
+        'PASS - CIS 2.1.2 compliant after remediation'
+        if ('COMPLIANT' in (cis_2_1_2_recheck.stdout | default('')) and 'NON_COMPLIANT' not in (cis_2_1_2_recheck.stdout | default('')))
+        else 'RECHECK REQUIRED - CIS 2.1.2: ' ~ (cis_2_1_2_recheck.stdout | default('No recheck output'))
+      }}
+  when: cis_remediate | default(false) | bool
