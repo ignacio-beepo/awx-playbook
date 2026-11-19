@@ -1,0 +1,126 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for /etc/nsswitch.conf
+  shell: |
+    auditctl -l 2>/dev/null | grep '/etc/nsswitch.conf' || true
+  register: nsswitch_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for /etc/nsswitch.conf
+  shell: |
+    grep '/etc/nsswitch.conf' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: nsswitch_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    nsswitch_identity_compliant: >-
+      {{
+        ('-w /etc/nsswitch.conf -p wa -k identity'
+        in nsswitch_running.stdout)
+        and
+        ('-w /etc/nsswitch.conf -p wa -k identity'
+        in nsswitch_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - /etc/nsswitch.conf auditing configured'
+        if nsswitch_identity_compliant
+        else
+        'FAIL - /etc/nsswitch.conf auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Ensure identity audit rules file exists
+  file:
+    path: /etc/audit/rules.d/50-identity.rules
+    state: touch
+    owner: root
+    group: root
+    mode: "0640"
+  when: not nsswitch_identity_compliant
+
+- name: Configure nsswitch identity audit rule
+  lineinfile:
+    path: /etc/audit/rules.d/50-identity.rules
+    line: "-w /etc/nsswitch.conf -p wa -k identity"
+    state: present
+  when: not nsswitch_identity_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not nsswitch_identity_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not nsswitch_identity_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep '/etc/nsswitch.conf' || true
+  register: nsswitch_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep '/etc/nsswitch.conf' /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: nsswitch_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/nsswitch.conf -p wa -k identity' in nsswitch_running_verify.stdout"
+      - "'-w /etc/nsswitch.conf -p wa -k identity' in nsswitch_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.15 compliant
+
+      Validation Result:
+      - /etc/nsswitch.conf monitored
+      - identity audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.15 non-compliant
+
+      Running Rules:
+      {{ nsswitch_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ nsswitch_persistent_verify.stdout }}
