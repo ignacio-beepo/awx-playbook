@@ -6,36 +6,32 @@
 
 - name: Assessment - CIS 2.1.1
   ansible.builtin.shell: |
-    installed=0
-    enabled=0
-    active=0
+    package="autofs"
+    unit="autofs.service"
 
-    if dpkg-query -s autofs >/dev/null 2>&1; then
-      installed=1
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q "install ok installed"; then
+      installed="yes"
+    else
+      installed="no"
     fi
 
-    state="$(systemctl is-enabled autofs.service 2>/dev/null || true)"
-    active_state="$(systemctl is-active autofs.service 2>/dev/null || true)"
+    enabled_state="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+    active_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
 
-    if [[ "$state" == "enabled" || "$state" == "enabled-runtime" ]]; then
-      enabled=1
-    fi
-
-    if [[ "$active_state" == "active" ]]; then
-      active=1
-    fi
-
-    if [[ "$installed" -eq 0 ]]; then
-      echo "COMPLIANT: target package not installed"
-    elif [[ "$enabled" -eq 0 && "$active" -eq 0 ]]; then
-      echo "COMPLIANT: package installed but service inactive and not enabled"
+    if [ "$installed" = "no" ]; then
+      echo "COMPLIANT: package not installed"
+    elif [ "$enabled_state" != "enabled" ] && \
+         [ "$enabled_state" != "enabled-runtime" ] && \
+         [ "$active_state" != "active" ]; then
+      echo "COMPLIANT: package installed but service inactive and disabled"
     else
       echo "NON_COMPLIANT: package/service in use"
     fi
 
-    echo "Package installed: $installed"
-    echo "Service state: $state"
-    echo "Service active: $active_state"
+    echo "Package: $package"
+    echo "Installed: $installed"
+    echo "Enabled state: $enabled_state"
+    echo "Active state: $active_state"
 
   args:
     executable: /bin/bash
