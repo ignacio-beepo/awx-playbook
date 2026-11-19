@@ -1,0 +1,128 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Check running audit rules for /etc/network and /etc/networks
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/network|/etc/networks' || true
+  register: network_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit rules for /etc/network and /etc/networks
+  shell: |
+    grep -E '/etc/network|/etc/networks' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: network_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    network_compliant: >-
+      {{
+        ('-w /etc/networks -p wa -k system-locale' in network_running.stdout)
+        and
+        ('-w /etc/network -p wa -k system-locale' in network_running.stdout)
+        and
+        ('-w /etc/networks -p wa -k system-locale' in network_persistent.stdout)
+        and
+        ('-w /etc/network -p wa -k system-locale' in network_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Network environment auditing configured'
+        if network_compliant
+        else
+        'FAIL - Network environment auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create network environment audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-etc_sysconfig_system_locale.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -w /etc/networks -p wa -k system-locale
+      -w /etc/network -p wa -k system-locale
+  when: not network_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not network_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not network_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep -E '/etc/network|/etc/networks' || true
+  register: network_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent audit rules
+  shell: |
+    grep -E '/etc/network|/etc/networks' \
+    /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: network_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'-w /etc/networks -p wa -k system-locale' in network_running_verify.stdout"
+      - "'-w /etc/network -p wa -k system-locale' in network_running_verify.stdout"
+      - "'-w /etc/networks -p wa -k system-locale' in network_persistent_verify.stdout"
+      - "'-w /etc/network -p wa -k system-locale' in network_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.8 compliant
+
+      Validation Result:
+      - /etc/networks monitored
+      - /etc/network monitored
+      - system-locale audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.8 non-compliant
+
+      Running Rules:
+      {{ network_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ network_persistent_verify.stdout }}
