@@ -1,0 +1,126 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Get UID_MIN value
+  shell: |
+    awk '/^\s*UID_MIN/{print $2}' /etc/login.defs
+  register: uid_min
+  changed_when: false
+  failed_when: false
+
+- name: Check running mount audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep mount || true
+  register: mounts_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent mount audit rules
+  shell: |
+    grep mount /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: mounts_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    mounts_compliant: >-
+      {{
+        ('mounts' in mounts_running.stdout)
+        and
+        ('mounts' in mounts_persistent.stdout)
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Mount auditing configured'
+        if mounts_compliant
+        else
+        'FAIL - Mount auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create mount audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-mounts.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      -a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -k mounts
+      -a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -k mounts
+  when: not mounts_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not mounts_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not mounts_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running mount audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep mount || true
+  register: mounts_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent mount audit rules
+  shell: |
+    grep mount /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: mounts_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'mounts' in mounts_running_verify.stdout"
+      - "'mounts' in mounts_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.19 compliant
+
+      Validation Result:
+      - mount syscall monitored
+      - mounts audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.19 non-compliant
+
+      Running Rules:
+      {{ mounts_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ mounts_persistent_verify.stdout }}
