@@ -1,0 +1,158 @@
+---
+##############################################################################
+# AUDIT
+##############################################################################
+
+- name: Get UID_MIN value
+  shell: |
+    awk '/^\s*UID_MIN/{print $2}' /etc/login.defs
+  register: uid_min
+  changed_when: false
+  failed_when: false
+
+- name: Check running audit access rules
+  shell: |
+    auditctl -l 2>/dev/null | grep access || true
+  register: access_running
+  changed_when: false
+  failed_when: false
+
+- name: Check persistent audit access rules
+  shell: |
+    grep access /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: access_persistent
+  changed_when: false
+  failed_when: false
+
+- name: Determine compliance status
+  set_fact:
+    access_compliant: >-
+      {{
+        'key=access' in access_running.stdout
+        or
+        '-k access' in access_running.stdout
+      }}
+
+- name: Show audit result
+  debug:
+    msg: >-
+      {{
+        'PASS - Unsuccessful access auditing configured'
+        if access_compliant
+        else
+        'FAIL - Unsuccessful access auditing missing. Starting remediation...'
+      }}
+
+##############################################################################
+# REMEDIATION
+##############################################################################
+
+- name: Create access audit rules
+  copy:
+    dest: /etc/audit/rules.d/50-access.rules
+    owner: root
+    group: root
+    mode: "0640"
+    content: |
+      ## Company Customization
+      ## Monitor OS filesystem only
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/etc -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/etc -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/bin -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/bin -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/sbin -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/sbin -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/usr/bin -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/usr/bin -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/usr/sbin -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/usr/sbin -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/var -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/var -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/home -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+      -a always,exit -F arch=b64 -S creat,open,openat,truncate,ftruncate -F dir=/home -F exit=-EPERM  -F auid>=1000 -F auid!=unset -k access
+
+  when: not access_compliant
+
+- name: Load audit rules
+  command: augenrules --load
+  register: augenrules_result
+  changed_when: true
+  failed_when: false
+  when: not access_compliant
+
+- name: Check audit enabled mode
+  shell: |
+    auditctl -s | grep enabled || true
+  register: audit_enabled_state
+  changed_when: false
+  failed_when: false
+
+- name: Display reboot recommendation
+  debug:
+    msg: "Reboot required to fully load audit rules"
+  when:
+    - audit_enabled_state.stdout is search('enabled 2')
+    - not access_compliant
+
+##############################################################################
+# RECHECK
+##############################################################################
+
+- name: Recheck running access audit rules
+  shell: |
+    auditctl -l 2>/dev/null | grep access || true
+  register: access_running_verify
+  changed_when: false
+  failed_when: false
+
+- name: Recheck persistent access audit rules
+  shell: |
+    grep access /etc/audit/rules.d/*.rules 2>/dev/null || true
+  register: access_persistent_verify
+  changed_when: false
+  failed_when: false
+
+##############################################################################
+# FINAL CIS VALIDATION
+##############################################################################
+
+- name: Final CIS Validation
+  assert:
+    that:
+      - "'access' in access_running_verify.stdout"
+      - "'access' in access_persistent_verify.stdout"
+
+    success_msg: |
+      PASS - CIS 6.2.3.17 compliant (Company Standard)
+
+      Validation Result:
+      - Unsuccessful access attempts monitored
+      - OS filesystem scope only
+      - access audit key configured
+      - running audit rules updated
+      - persistent audit rules updated
+
+      Company Scope:
+      /etc
+      /bin
+      /sbin
+      /usr/bin
+      /usr/sbin
+      /var
+      /home
+
+    fail_msg: |
+      FAIL - CIS 6.2.3.17 non-compliant
+
+      Running Rules:
+      {{ access_running_verify.stdout }}
+
+      Persistent Rules:
+      {{ access_persistent_verify.stdout }}
