@@ -24,9 +24,9 @@
       ansible.builtin.include_tasks:
         file: ../controls/ubuntu2404/section_2.yml
 
-    - name: Execute Section 6 Logging and Auditing
-      ansible.builtin.include_tasks:
-        file: ../controls/ubuntu2404/section_6.yml
+    # - name: Execute Section 6 Logging and Auditing
+    #   ansible.builtin.include_tasks:
+    #     file: ../controls/ubuntu2404/section_6.yml
 
     #- name: Execute Section 7 System Maintenance
     #  ansible.builtin.include_tasks:
